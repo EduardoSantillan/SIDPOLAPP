@@ -1,0 +1,15 @@
+# Secretos y certificados: nunca al repositorio (RNF-04)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+BackEnd/nginx/certs/
+# Generados
+__pycache__/
+*.pyc
+.pytest_cache/
+node_modules/
+.venv/
+venv/
+dist/

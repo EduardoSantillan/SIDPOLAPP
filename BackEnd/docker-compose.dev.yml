@@ -1,0 +1,8 @@
+# Solo para desarrollo: se suma al compose principal (-f docker-compose.yml -f docker-compose.dev.yml).
+# Publica la API en el 8000 con su documentación (/docs y /openapi.json, de donde el front genera sus tipos).
+services:
+  api:
+    ports: ["8000:8000"]
+    environment:
+      ENTORNO: desarrollo
+      FORWARDED_ALLOW_IPS: "127.0.0.1"  # sin Nginx delante nadie debe poder falsear su IP

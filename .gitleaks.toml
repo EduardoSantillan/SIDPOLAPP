@@ -1,0 +1,16 @@
+# Escaneo de secretos (RNF-04). Parte de las reglas por defecto de gitleaks.
+# Se excluyen SOLO rutas que ya están en .gitignore y nunca se suben: secretos locales, certificado de prueba y entornos virtuales.
+title = "SIDPOLAPP"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Archivos locales ignorados por git"
+paths = [
+  '''(^|/)\.venv/''',
+  '''(^|/)venv/''',
+  '''(^|/)node_modules/''',
+  '''BackEnd/\.env$''',
+  '''BackEnd/nginx/certs/''',
+]

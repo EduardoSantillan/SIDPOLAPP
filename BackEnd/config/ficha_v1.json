@@ -1,0 +1,35 @@
+{
+  "version": "ficha-1",
+  "secciones": [
+    {
+      "id": "que_muestra",
+      "titulo": "Qué muestra esta página",
+      "texto": "La cantidad de denuncias de robo y de hurto que se registraron cada mes en los 43 distritos de Lima Metropolitana, y lo que un modelo había estimado para ese mismo mes. Sirve para ver cómo se comportó la estimación en meses pasados."
+    },
+    {
+      "id": "que_no_es",
+      "titulo": "Qué no muestra",
+      "texto": "No es la cantidad real de delitos: solo cuenta lo que se denunció y quedó registrado en el SIDPOL. Tampoco recomienda dónde actuar ni ordena los distritos de más a menos. Robo y hurto se muestran por separado y nunca se suman."
+    },
+    {
+      "id": "que_se_estima",
+      "titulo": "Qué se estima",
+      "texto": "Cada mes, con lo registrado hasta el mes anterior, se estima cuántas denuncias se registrarán en el mes siguiente. Se comparan cuatro formas de hacerlo: un modelo por distrito, un modelo con todo Lima, repetir el mes anterior y repetir el mismo mes del año pasado. Las dos últimas son referencias sencillas para saber si un modelo aporta algo."
+    },
+    {
+      "id": "como_leer_el_error",
+      "titulo": "Cómo leer el error",
+      "texto": "El error en denuncias dice cuánto se equivocó la estimación, en promedio, cada mes. El MASE lo compara con el error de repetir el mismo mes del año pasado: 0,64 significa que el error fue el 64 % de ese; 1,00 significa que fue igual; más de 1,00, que fue mayor. Menos es mejor. Los valores corresponden a meses ya ocurridos."
+    },
+    {
+      "id": "cambio_de_registro",
+      "titulo": "Cambio de noviembre de 2024",
+      "texto": "Desde noviembre de 2024 cambió la forma de registrar las denuncias. Por eso los gráficos marcan ese mes y los resultados se pueden ver por separado antes y después."
+    },
+    {
+      "id": "detalle_tecnico",
+      "titulo": "Detalle técnico",
+      "texto": "Horizonte de un mes. Los modelos (XGBoost) se vuelven a entrenar cada mes con toda la historia anterior, de enero de 2023 a julio de 2026. Los meses sin denuncias registradas se tratan como cero. La escala del MASE es fija por distrito y se calcula con 2018–2022. La configuración usada, con su huella digital (SHA-256), aparece al final de esta ficha."
+    }
+  ]
+}
