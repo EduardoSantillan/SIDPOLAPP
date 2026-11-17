@@ -30,9 +30,13 @@ const DATOS: Rutas = {
     ],
     mase_explicacion: "MASE compara el error con el de repetir el mismo mes del año anterior (escala fija 2018–2022): 0,64 = 64 % de ese error. Menos es mejor.",
     meses_evaluados: 43, rango_habitual: { min: 100, max: 200, meses: 12 }, ejecucion_id: "e1", aviso: AVISO } },
-  "/distritos/150140/serie": { cuerpo: {
-    ubigeo: "150140", target: "ROBO", periodo: "todo", cambio_registro: { fecha: "2024-11-01", texto: "Desde nov 2024 cambió la forma de registrar" },
-    puntos, estrategias: [], ejecucion_id: "e1", aviso: AVISO } },
+  // la serie respeta el periodo pedido, como la API: «antes» y «desde» nov 2024 recortan el tramo mostrado
+  "/distritos/150140/serie": (url) => {
+    const periodo = url.searchParams.get("periodo") ?? "todo";
+    return { cuerpo: {
+      ubigeo: "150140", target: "ROBO", periodo, cambio_registro: { fecha: "2024-11-01", texto: "Desde nov 2024 cambió la forma de registrar" },
+      puntos: periodo === "todo" ? puntos : puntos.filter((p) => p.regimen === periodo), estrategias: [], ejecucion_id: "e1", aviso: AVISO } };
+  },
 };
 
 afterEach(() => vi.unstubAllGlobals());
@@ -98,7 +102,7 @@ describe("Inicio y Mi distrito", () => {
     expect(frase).toHaveTextContent("152 denuncias de robo en julio 2026");
     expect(screen.getByText("Modelo por distrito", { selector: ".t" })).toBeInTheDocument();
     expect(screen.getByText("12 menos que lo registrado")).toBeInTheDocument();
-    expect(screen.getByText(/se equivocó en promedio por/)).toHaveTextContent("13 denuncias al mes");
+    expect(screen.getByText(/se equivocó en promedio por/)).toHaveTextContent("13,0 denuncias al mes"); // un decimal, igual que la tabla
     expect(screen.getByText(/0,64 = 64 % de ese error/)).toBeInTheDocument();
     expect(screen.getByRole("note")).toHaveTextContent(AVISO); // el aviso de alcance siempre visible
   });
@@ -123,6 +127,40 @@ describe("Inicio y Mi distrito", () => {
     expect(screen.queryByText(/denuncias de robo en/)).not.toBeInTheDocument();
   });
 
+  it("muestra el error con un decimal en la frase y en la tabla, y no dice «igual» cuando solo coincide al redondear", async () => {
+    const base = (DATOS["/distritos/150140/resumen"] as { cuerpo: Record<string, unknown> }).cuerpo;
+    simularApi({ ...DATOS, "/distritos/150140/resumen": { cuerpo: { ...base, registradas_ultimo_mes: 0,
+      estimaciones_ultimo_mes: [
+        { estrategia: "local", etiqueta: "Modelo por distrito", valor: 0, diferencia: 0 },
+        { estrategia: "global", etiqueta: "Modelo con todo Lima", valor: 0, diferencia: 0 },
+      ],
+      error_promedio: [
+        { estrategia: "local", etiqueta: "Modelo por distrito", denuncias_por_mes: 0.4, mase: 0.9 },
+        { estrategia: "global", etiqueta: "Modelo con todo Lima", denuncias_por_mes: 0.5, mase: 0.95 },
+        { estrategia: "naive1", etiqueta: "Repetir el mes anterior", denuncias_por_mes: 0.6, mase: 1 },
+        { estrategia: "naive_estacional", etiqueta: "Repetir el mismo mes del año pasado", denuncias_por_mes: 0.7, mase: 1.1 },
+      ] } } });
+    pintar("/distrito/150140?delito=ROBO");
+    await entrar();
+    const frase = await screen.findByText(/se equivocó en promedio por/);
+    expect(frase).toHaveTextContent("0,4 denuncias al mes");
+    expect(frase).toHaveTextContent("0,5");
+    expect(screen.getByRole("cell", { name: "0,4" })).toBeInTheDocument(); // la tabla dice lo mismo que la frase
+    expect(screen.getByRole("cell", { name: "0,5" })).toBeInTheDocument();
+    expect(screen.getAllByText("coincide al redondear")).toHaveLength(2);
+    expect(screen.queryByText(/igual a lo registrado/)).not.toBeInTheDocument();
+  });
+
+  it("aclara a qué se aplica el periodo y que la evaluación empezó en enero de 2023, no en nov 2024", async () => {
+    simularApi(DATOS);
+    pintar("/distrito/150140?delito=ROBO&periodo=desde_nov_2024");
+    await entrar();
+    const nota = await screen.findByText(/El periodo seleccionado se aplica al histórico y a las descargas/);
+    expect(nota).toHaveTextContent("El resumen de arriba usa siempre los 43 meses evaluados, de enero 2023 a julio 2026");
+    expect(await screen.findByText(/existen desde enero 2023, cuando empezó la evaluación; este periodo solo muestra un tramo de ella/)).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/aparecen solo desde noviembre 2024/);
+  });
+
   it("cambiar el periodo pide la serie de ese periodo y deja el enlace compartible", async () => {
     const llamadas = simularApi(DATOS);
     pintar("/distrito/150140?delito=ROBO");
@@ -143,6 +181,35 @@ describe("gráfico accesible", () => {
     fireEvent.keyDown(grafico, { key: "Home" });
     expect(screen.getByText(/se registraron/, { selector: ".readout" })).toHaveTextContent("junio 2024");
     expect(screen.getByText("Ver los números mes a mes")).toBeInTheDocument();
+  });
+
+  it("al cambiar de periodo, el mes elegido sigue si existe en la nueva serie y, si no, pasa al último mes disponible", async () => {
+    simularApi(DATOS);
+    // Se empieza por el periodo corto para que quede guardado en memoria: al volver a él, la serie cambia al instante
+    // con el gráfico ya montado, que es justo el caso en que una posición vieja quedaba fuera de la serie.
+    pintar("/distrito/150140?delito=ROBO&periodo=antes_nov_2024");
+    await entrar();
+    const grafico = () => screen.findByRole("img", { name: /Usa las flechas/ });
+    const lectura = () => screen.getByText(/se registraron/, { selector: ".readout" });
+    const periodo = (v: string) => userEvent.selectOptions(screen.getByLabelText("Periodo"), v);
+    await grafico();
+
+    await periodo("todo");
+    await waitFor(() => expect(lectura()).toHaveTextContent("julio 2026"));
+    fireEvent.keyDown(await grafico(), { key: "Home" });
+    for (let k = 0; k < 3; k++) fireEvent.keyDown(await grafico(), { key: "ArrowRight" });
+    expect(lectura()).toHaveTextContent("setiembre 2024");
+
+    await periodo("antes_nov_2024"); // setiembre 2024 sigue existiendo en la serie corta: se conserva
+    await waitFor(() => expect(lectura()).toHaveTextContent("setiembre 2024"));
+
+    await periodo("todo");
+    fireEvent.keyDown(await grafico(), { key: "End" });
+    expect(lectura()).toHaveTextContent("julio 2026");
+
+    await periodo("antes_nov_2024"); // julio 2026 ya no está: pasa al último mes disponible, sin romper la pantalla
+    await waitFor(() => expect(lectura()).toHaveTextContent("octubre 2024"));
+    expect(lectura()).toHaveTextContent(`${puntos[4].registradas}`);
   });
 });
 

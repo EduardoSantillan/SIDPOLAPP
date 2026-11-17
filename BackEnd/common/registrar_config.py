@@ -15,7 +15,7 @@ from sqlalchemy import text
 from common.db import sesion
 
 RUTA = Path(__file__).resolve().parents[1] / "config" / "experimento_v1.json"
-RUTA_FICHA = Path(__file__).resolve().parents[1] / "config" / "ficha_v1.json"
+RUTA_FICHA = Path(__file__).resolve().parents[1] / "config" / "ficha_v2.json"
 
 
 def sha256_config(contenido: dict) -> str:

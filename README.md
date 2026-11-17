@@ -63,7 +63,7 @@ Para montarlo en un servidor de verdad (HTTPS, respaldos, sin cuentas de prueba)
 
 ## Pruebas
 
-- Frontend: `npm test` dentro de `FrontEnd/` (18 pruebas).
+- Frontend: `npm test` dentro de `FrontEnd/` (22 pruebas).
 - Backend: 211 pruebas. Necesitan una PostgreSQL de prueba; los comandos están en `BackEnd/README.md`.
 
 ## Lo que falta

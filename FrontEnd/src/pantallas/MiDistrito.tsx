@@ -4,7 +4,7 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { Grafico } from "../components/Grafico";
 import { Alerta, Aviso, Cargando, ErrorCaja, Falla, SelectorDelito, Titulo } from "../components/Pieza";
 import { api } from "../lib/api";
-import { PERIODOS, comparado, delitoTexto, mesTexto, num } from "../lib/formato";
+import { PERIODOS, comparado, delitoTexto, mesTexto, num, restarMeses } from "../lib/formato";
 import type { Delito, Periodo, Resumen, Serie } from "../lib/tipos";
 
 const ESTILO_ESTIMACION: Record<string, string> = { local: "est", global: "est b" };
@@ -20,6 +20,8 @@ export function MiDistrito() {
   const resumen = useQuery({ queryKey: ["resumen", ubigeo, delito], queryFn: () => api.get<Resumen>(`/distritos/${ubigeo}/resumen`, { target: delito }) });
   const serie = useQuery({ queryKey: ["serie", ubigeo, delito, periodo], queryFn: () => api.get<Serie>(`/distritos/${ubigeo}/serie`, { target: delito, periodo }) });
   const r = resumen.data;
+  // La evaluación empezó con el primer mes que tiene resultado; el filtro de periodo solo cambia el tramo que se muestra.
+  const inicio = r ? restarMeses(r.ultimo_mes, r.meses_evaluados - 1) : "";
 
   return (
     <>
@@ -43,15 +45,17 @@ export function MiDistrito() {
                 </select>
               </label>
             </div>
+            <p className="note" style={{ margin: "0 0 10px" }}>
+              El periodo seleccionado se aplica al histórico y a las descargas. El resumen de arriba usa siempre los {r.meses_evaluados} meses
+              evaluados, de {mesTexto(inicio)} a {mesTexto(r.ultimo_mes)}.
+            </p>
             {serie.isPending ? <Cargando /> : serie.error ? <ErrorCaja error={serie.error} reintentar={() => serie.refetch()} /> : (
               <>
                 <Grafico serie={serie.data} distrito={r.distrito} />
                 <p className="note" style={{ marginTop: 12 }}>
                   La zona sombreada marca desde noviembre de 2024, cuando cambió la forma de registrar las denuncias.
-                  {(() => {
-                    const primero = serie.data.puntos.find((p) => p.estimaciones.local != null);
-                    return primero ? ` Las líneas punteadas aparecen solo desde ${mesTexto(primero.fecha)}, que es cuando se empezó a comparar lo estimado con lo registrado.` : "";
-                  })()}
+                  {" "}Las líneas punteadas (lo que estimaban los modelos) existen desde {mesTexto(inicio)}, cuando empezó la evaluación
+                  {periodo === "todo" ? "." : "; este periodo solo muestra un tramo de ella."}
                 </p>
               </>
             )}
@@ -81,8 +85,8 @@ function Respuesta({ r, delito }: { r: Resumen; delito: Delito }) {
       </div>
       {local?.denuncias_por_mes != null && global?.denuncias_por_mes != null && (
         <p style={{ margin: "16px 0 0" }}>
-          <b>¿Qué tan cerca suelen estar?</b> En los últimos {r.meses_evaluados} meses, el modelo por distrito se equivocó en promedio por <b>{num(local.denuncias_por_mes)} denuncias al mes</b> y
-          el modelo con todo Lima por <b>{num(global.denuncias_por_mes)}</b>.
+          <b>¿Qué tan cerca suelen estar?</b> En los últimos {r.meses_evaluados} meses, el modelo por distrito se equivocó en promedio por <b>{num(local.denuncias_por_mes, 1)} denuncias al mes</b> y
+          el modelo con todo Lima por <b>{num(global.denuncias_por_mes, 1)}</b>.
           {r.rango_habitual.min != null && <> En este distrito, durante el último año, se registraron entre {num(r.rango_habitual.min)} y {num(r.rango_habitual.max ?? 0)} denuncias al mes.</>}
         </p>
       )}

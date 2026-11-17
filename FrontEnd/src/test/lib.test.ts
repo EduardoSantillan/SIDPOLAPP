@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError, api, sesion } from "../lib/api";
-import { comparado, mesTexto, num } from "../lib/formato";
+import { comparado, mesTexto, num, restarMeses } from "../lib/formato";
 
 afterEach(() => { vi.unstubAllGlobals(); sesion.quitar(); sesion.alVencer(null); });
 
@@ -15,7 +15,12 @@ describe("formato", () => {
   it("compara lo estimado con lo registrado en una frase", () => {
     expect(comparado(-12)).toBe("12 menos que lo registrado");
     expect(comparado(1)).toBe("1 más que lo registrado");
-    expect(comparado(0)).toBe("igual a lo registrado");
+    expect(comparado(0)).toBe("coincide al redondear");
+  });
+  it("resta meses sin salirse del calendario", () => {
+    expect(restarMeses("2026-07-01", 42)).toBe("2023-01-01");
+    expect(restarMeses("2026-02-01", 2)).toBe("2025-12-01");
+    expect(restarMeses("2026-07-01", 0)).toBe("2026-07-01");
   });
 });
 

@@ -16,8 +16,11 @@ const ETQ = { local: "Modelo por distrito", global: "Modelo con todo Lima" } as 
  */
 export function Grafico({ serie, distrito }: { serie: Serie; distrito: string }) {
   const p = serie.puntos;
-  const [fijo, setFijo] = useState<number | null>(null);
-  const i = fijo ?? p.length - 1;
+  // Se recuerda el MES elegido, no su posición: si el periodo cambia y ese mes ya no está, se vuelve al último mes disponible.
+  const [elegido, setElegido] = useState<string | null>(null);
+  const enSerie = elegido ? p.findIndex((x) => x.fecha === elegido) : -1;
+  const i = enSerie >= 0 ? enSerie : p.length - 1;
+  const fijar = (k: number | null) => setElegido(k == null ? null : p[Math.max(0, Math.min(p.length - 1, k))]?.fecha ?? null);
 
   const g = useMemo(() => {
     const n = Math.max(1, p.length - 1);
@@ -45,13 +48,13 @@ export function Grafico({ serie, distrito }: { serie: Serie; distrito: string })
   const mover = (clientX: number, el: SVGSVGElement) => {
     const r = el.getBoundingClientRect();
     const px = ((clientX - r.left) / r.width) * W;
-    setFijo(Math.max(0, Math.min(p.length - 1, Math.round(((px - L) / (W - L - R)) * (p.length - 1)))));
+    fijar(Math.round(((px - L) / (W - L - R)) * (p.length - 1)));
   };
   const tecla = (e: React.KeyboardEvent) => {
-    if (e.key === "ArrowLeft") { e.preventDefault(); setFijo(Math.max(0, i - 1)); }
-    if (e.key === "ArrowRight") { e.preventDefault(); setFijo(Math.min(p.length - 1, i + 1)); }
-    if (e.key === "Home") { e.preventDefault(); setFijo(0); }
-    if (e.key === "End") { e.preventDefault(); setFijo(p.length - 1); }
+    if (e.key === "ArrowLeft") { e.preventDefault(); fijar(i - 1); }
+    if (e.key === "ArrowRight") { e.preventDefault(); fijar(i + 1); }
+    if (e.key === "Home") { e.preventDefault(); fijar(0); }
+    if (e.key === "End") { e.preventDefault(); fijar(p.length - 1); }
   };
 
   const act = p[i];
@@ -61,7 +64,7 @@ export function Grafico({ serie, distrito }: { serie: Serie; distrito: string })
       <div className="chartwrap">
         <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" tabIndex={0}
              aria-label={`Denuncias registradas por mes en ${distrito} y lo que estimaba cada modelo. Usa las flechas para recorrer los meses.`}
-             onMouseMove={(e) => mover(e.clientX, e.currentTarget)} onMouseLeave={() => setFijo(null)} onKeyDown={tecla}>
+             onMouseMove={(e) => mover(e.clientX, e.currentTarget)} onMouseLeave={() => fijar(null)} onKeyDown={tecla}>
           {g.quiebre >= 0 && (
             <>
               <rect x={g.X(g.quiebre)} y={T} width={g.X(p.length - 1) - g.X(g.quiebre)} height={H - T - B} fill="var(--regime)" />

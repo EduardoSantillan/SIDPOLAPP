@@ -22,8 +22,15 @@ export const delitoTitulo = (d: Delito) => (d === "ROBO" ? "Robo" : "Hurto");
 
 export const PERIODOS: [Periodo, string][] = [["todo", "Todo el periodo"], ["antes_nov_2024", "Antes de nov 2024"], ["desde_nov_2024", "Desde nov 2024"]];
 
-/** "13 menos que lo registrado", "igual a lo registrado", etc. */
+/** "2026-07-01" menos 42 meses → "2023-01-01". Se calcula con el texto, sin zonas horarias. */
+export function restarMeses(iso: string, n: number): string {
+  const [a, m] = iso.split("-").map(Number);
+  const total = a * 12 + (m - 1) - n;
+  return `${Math.floor(total / 12)}-${String((total % 12) + 1).padStart(2, "0")}-01`;
+}
+
+/** "13 menos que lo registrado", "coincide al redondear", etc. Los valores ya vienen redondeados: no se dice «igual» para no sugerir un acierto exacto. */
 export function comparado(diferencia: number): string {
-  if (diferencia === 0) return "igual a lo registrado";
+  if (diferencia === 0) return "coincide al redondear";
   return `${num(Math.abs(diferencia))} ${diferencia < 0 ? "menos" : "más"} que lo registrado`;
 }

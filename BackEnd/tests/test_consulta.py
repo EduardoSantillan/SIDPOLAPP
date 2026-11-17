@@ -223,6 +223,12 @@ def test_ficha_informativa_en_lenguaje_llano_con_la_configuracion_al_final(api, 
     assert ids[0] == "que_muestra" and ids[-1] == "detalle_tecnico" and "cambio_de_registro" in ids
     assert len(d["configuracion"]["sha256"]) == 64 and d["aviso"] == AVISO
     assert all(s["titulo"] and s["texto"] for s in d["secciones"])
+    texto = {s["id"]: s["texto"] for s in d["secciones"]}
+    assert d["version_ficha"] == "ficha-2"
+    assert "Para estimar julio se utilizaron únicamente datos disponibles hasta junio" in texto["que_se_estima"]
+    # el MASE usa una escala fija de 2018–2022: un valor menor que 1 no prueba por sí solo que un modelo supere a las referencias
+    assert "2018 y 2022" in texto["como_leer_el_error"] and "no demuestra por sí solo" in texto["como_leer_el_error"]
+    assert "empezó en enero de 2023" in texto["cambio_de_registro"]
 
 
 # ---------- reglas transversales ----------
