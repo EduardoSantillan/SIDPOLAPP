@@ -4,7 +4,7 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { Grafico } from "../components/Grafico";
 import { Alerta, Aviso, Cargando, ErrorCaja, Falla, SelectorDelito, Titulo } from "../components/Pieza";
 import { api } from "../lib/api";
-import { PERIODOS, comparado, delitoTexto, mesTexto, num, restarMeses } from "../lib/formato";
+import { PERIODOS, comparado, delitoTexto, mayuscula, mesTexto, num, restarMeses } from "../lib/formato";
 import type { Delito, Periodo, Resumen, Serie } from "../lib/tipos";
 
 const ESTILO_ESTIMACION: Record<string, string> = { local: "est", global: "est b" };
@@ -57,7 +57,7 @@ export function MiDistrito() {
                   La zona sombreada marca desde noviembre de 2024, cuando cambió la forma de registrar las denuncias.
                   {" "}Las líneas punteadas (lo que estimaban los modelos) existen desde {mesTexto(inicio)}, cuando empezó la evaluación
                   {periodo === "todo" ? "." : "; este periodo solo muestra un tramo de ella."}
-                  {serie.data.meses_siguientes && <> Los círculos del final son la estimación para {serie.data.meses_siguientes.meses.map((m) => mesTexto(m.fecha)).join(" y ")}, que todavía no se puede comparar con lo registrado.</>}
+                  {serie.data.meses_siguientes && <> Los círculos del final son la estimación de {serie.data.meses_siguientes.meses.map((m) => mesTexto(m.fecha)).join(" y ")}.</>}
                 </p>
               </>
             )}
@@ -110,50 +110,32 @@ function Respuesta({ r, delito }: { r: Resumen; delito: Delito }) {
   );
 }
 
-/** Pregunta: ¿y los meses que vienen? Los meses siguientes al último con dato todavía no tienen denuncias registradas: se estiman y no se comparan. */
+/** Pregunta: ¿y los meses que vienen? Todavía no tienen denuncias registradas: se estiman y no se comparan. Mismo estilo que la respuesta de julio. */
 function MesesSiguientes({ r, delito }: { r: Resumen; delito: Delito }) {
   const ms = r.meses_siguientes;
   if (!ms || !ms.meses.length) return null;
   const nombres = ms.meses.map((m) => mesTexto(m.fecha));
   const lista = nombres.join(" y ");
-  const porEstrategia = (m: (typeof ms.meses)[number]) => Object.fromEntries(m.estimaciones.map((e) => [e.estrategia, e]));
+  const modelos = (["local", "global"] as const).map((e) => ({ e, etiqueta: ms.meses[0].estimaciones.find((x) => x.estrategia === e)?.etiqueta ?? e }));
   return (
     <div className="card">
-      <h2 style={{ marginTop: 0 }}>Estimación para {lista}</h2>
-      <p className="answer">
-        Todavía no hay denuncias registradas de {lista}. Con los datos hasta {mesTexto(ms.datos_hasta)}, para {r.distrito} los modelos estiman
-        {" "}estas <b>denuncias de {delitoTexto(delito)}</b>:
-      </p>
-      <table>
-        <thead><tr><th>Mes</th><th className="n">Modelo por distrito</th><th className="n">Modelo con todo Lima</th></tr></thead>
-        <tbody>
-          {ms.meses.map((m, i) => {
-            const e = porEstrategia(m);
-            return (
-              <tr key={m.fecha}>
-                <td>{nombres[i]}</td>
-                <td className="n">{e.local ? num(e.local.valor) : "—"}</td>
-                <td className="n">{e.global ? num(e.global.valor) : "—"}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-      <p className="note" style={{ margin: "10px 0 0" }}>
-        Reglas simples para comparar:{" "}
-        {ms.meses.map((m, i) => {
-          const e = porEstrategia(m);
-          return `${nombres[i]}: ${e.naive1 ? num(e.naive1.valor) : "—"} repitiendo el mes anterior y ${e.naive_estacional ? num(e.naive_estacional.valor) : "—"} repitiendo el mismo mes del año pasado`;
-        }).join("; ")}.
-      </p>
-      {ms.meses.length > 1 && (
-        <p className="note" style={{ margin: "8px 0 0" }}>
-          {nombres[0]} se estima solo con datos ya registrados. {nombres.slice(1).join(" y ")} se apoya además en la estimación del mes anterior, así que puede equivocarse más.
-        </p>
-      )}
-      <p className="note" style={{ margin: "8px 0 0" }}>
-        Son estimaciones de denuncias registradas, no la cantidad real de delitos ni una recomendación. El error promedio de arriba mide estimaciones a un mes
-        sobre meses ya ocurridos; estas cifras todavía no entran ahí. Cuando haya datos de esos meses se podrán comparar.
+      <p className="answer">Para {lista}, los modelos estiman <b>denuncias de {delitoTexto(delito)}</b>:</p>
+      <div className="grid2">
+        {modelos.map(({ e, etiqueta }) => (
+          <div key={e} className={ESTILO_ESTIMACION[e]}>
+            <div className="t">{etiqueta}</div>
+            <div className="meses">
+              {ms.meses.map((m, i) => {
+                const v = m.estimaciones.find((x) => x.estrategia === e)?.valor;
+                return <div key={m.fecha}><div className="n">{v != null ? num(v) : "—"}</div><div className="t">{mayuscula(nombres[i])}</div></div>;
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+      <p className="note" style={{ margin: "12px 0 0" }}>
+        Con datos hasta {mesTexto(ms.datos_hasta)}. Todavía no hay denuncias registradas de {ms.meses.length > 1 ? "esos meses" : "ese mes"}, así que no se pueden comparar.
+        {ms.meses.length > 1 && <> {mayuscula(nombres[1])} se apoya en la estimación de {nombres[0]} y puede equivocarse más.</>}
       </p>
     </div>
   );

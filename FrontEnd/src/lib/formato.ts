@@ -10,6 +10,8 @@ export function mesTexto(iso: string): string {
   const [a, m] = iso.split("-").map(Number);
   return `${MESES[m - 1]} ${a}`;
 }
+/** Para empezar una frase: «agosto 2026» → «Agosto 2026». */
+export const mayuscula = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 export const mesCorto = (iso: string) => MESES[Number(iso.split("-")[1]) - 1].slice(0, 3);
 
 export const fechaHora = (iso: string) =>

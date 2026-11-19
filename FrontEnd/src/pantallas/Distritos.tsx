@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Aviso, Cargando, Falla, SelectorDelito, Titulo } from "../components/Pieza";
 import { api } from "../lib/api";
-import { mesTexto, num } from "../lib/formato";
+import { mayuscula, mesTexto, num } from "../lib/formato";
 import type { Delito, Tabla } from "../lib/tipos";
 
 type Columna = string;  // "distrito", "registradas", "local", "global" o «AAAA-MM-DD|estrategia» (estimaciones de los meses sin dato)
@@ -17,6 +17,7 @@ export function Distritos() {
   const [orden, setOrden] = useState<{ col: Columna; dir: 1 | -1 }>({ col: "distrito", dir: 1 });
   const [marcados, setMarcados] = useState<Set<string>>(new Set());
   const [soloMarcados, setSoloMarcados] = useState(false);
+  const [modelo, setModelo] = useState<"local" | "global">("local"); // qué forma de estimar se ve en las columnas de los meses que vienen
   const q = useQuery({ queryKey: ["tabla", delito], queryFn: () => api.get<Tabla>("/distritos/resumen", { target: delito }) });
 
   const filas = useMemo(() => {
@@ -44,8 +45,8 @@ export function Distritos() {
     setMarcados(n);
     if (n.size < 2) setSoloMarcados(false);
   };
-  const th = (col: Columna, texto: string, numerica = false) => (
-    <th className={numerica ? "n" : ""} aria-sort={orden.col === col ? (orden.dir > 0 ? "ascending" : "descending") : "none"}>
+  const th = (col: Columna, texto: string, numerica = false, extra = "") => (
+    <th className={`${numerica ? "n" : ""} ${extra}`.trim()} aria-sort={orden.col === col ? (orden.dir > 0 ? "ascending" : "descending") : "none"}>
       <button onClick={() => setOrden({ col, dir: orden.col === col ? (-orden.dir as 1 | -1) : 1 })}>
         {texto}{orden.col === col ? (orden.dir > 0 ? " ▲" : " ▼") : ""}
       </button>
@@ -78,6 +79,19 @@ export function Distritos() {
                 {marcados.size > 0 && <button onClick={() => { setMarcados(new Set()); setSoloMarcados(false); }}>Quitar marcas</button>}
               </span>
             </div>
+            {sig.length > 0 && (
+              <label className="row" style={{ gap: 8, marginBottom: 10 }}>
+                <span className="note">Estimación según</span>
+                <select aria-label="Estimación según" value={modelo} onChange={(e) => {
+                  const v = e.target.value as "local" | "global";
+                  setModelo(v);
+                  if (orden.col.includes("|")) setOrden({ col: `${orden.col.split("|")[0]}|${v}`, dir: orden.dir }); // sigue ordenando por el mismo mes
+                }}>
+                  <option value="local">Modelo por distrito</option>
+                  <option value="global">Modelo con todo Lima</option>
+                </select>
+              </label>
+            )}
             <div className="tabla-scroll">
               <table>
                 <thead>
@@ -85,9 +99,9 @@ export function Distritos() {
                     <th><span className="sr">Marcar</span></th>
                     {th("distrito", "Distrito")}
                     {th("registradas", `Registradas en ${mes}`, true)}
+                    {sig.map((m) => th(`${m}|${modelo}`, `${mesTexto(m)} (estimado)`, true, "futuro"))}
                     {th("local", "Modelo por distrito: error promedio (denuncias/mes)", true)}
                     {th("global", "Modelo con todo Lima: error promedio (denuncias/mes)", true)}
-                    {sig.flatMap((m) => [th(`${m}|local`, `Estimado para ${mesTexto(m)}: modelo por distrito`, true), th(`${m}|global`, `Estimado para ${mesTexto(m)}: modelo con todo Lima`, true)])}
                   </tr>
                 </thead>
                 <tbody>
@@ -96,9 +110,9 @@ export function Distritos() {
                       <td><input type="checkbox" checked={marcados.has(f.ubigeo)} onChange={(e) => marcar(f.ubigeo, e.target.checked)} aria-label={`Marcar ${f.distrito}`} /></td>
                       <td><Link to={`/distrito/${f.ubigeo}?delito=${delito}`}>{f.distrito}</Link></td>
                       <td className="n">{f.registradas != null ? num(f.registradas) : "—"}</td>
+                      {sig.map((m) => <td key={m} className="n futuro">{f.sig[`${m}|${modelo}`] != null ? num(f.sig[`${m}|${modelo}`]) : "—"}</td>)}
                       <td className="n">{f.local != null ? num(f.local, 1) : "—"}</td>
                       <td className="n">{f.global != null ? num(f.global, 1) : "—"}</td>
-                      {sig.flatMap((m) => [`${m}|local`, `${m}|global`].map((k) => <td key={k} className="n">{f.sig[k] != null ? num(f.sig[k]) : "—"}</td>))}
                     </tr>
                   ))}
                 </tbody>
@@ -106,9 +120,8 @@ export function Distritos() {
             </div>
             {sig.length > 0 && q.data.datos_hasta && (
               <p className="note">
-                Las últimas columnas son estimaciones de denuncias registradas para {sig.map((m) => mesTexto(m)).join(" y ")}, hechas con datos hasta {mesTexto(q.data.datos_hasta)}.
-                Todavía no hay denuncias registradas de esos meses, así que no se pueden comparar y no entran en el error promedio.
-                {sig.length > 1 && <> {mesTexto(sig[1])} se apoya además en la estimación del mes anterior, por eso puede equivocarse más.</>}
+                {mayuscula(sig.map((m) => mesTexto(m)).join(" y "))} {sig.length > 1 ? "son estimaciones" : "es una estimación"} con datos hasta {mesTexto(q.data.datos_hasta)}: todavía no hay denuncias registradas de {sig.length > 1 ? "esos meses" : "ese mes"}.
+                {sig.length > 1 && <> {mayuscula(mesTexto(sig[1]))} se apoya en la estimación de {mesTexto(sig[0])}, así que puede equivocarse más.</>}
               </p>
             )}
             <p className="note">Orden alfabético por defecto. Toca el título de una columna para ordenar por ella. Un guion (—) significa que no hay dato para medirlo.</p>

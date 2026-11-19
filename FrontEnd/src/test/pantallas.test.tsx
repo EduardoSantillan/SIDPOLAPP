@@ -194,16 +194,14 @@ describe("meses sin denuncias registradas todavía", () => {
     simularApi(CON_SIGUIENTES);
     pintar("/distrito/150140?delito=ROBO");
     await entrar();
-    const titulo = await screen.findByRole("heading", { name: "Estimación para agosto 2026 y setiembre 2026" });
+    const titulo = await screen.findByText(/Para agosto 2026 y setiembre 2026, los modelos estiman/);
     const tarjeta = titulo.closest(".card") as HTMLElement;
-    expect(tarjeta).toHaveTextContent("Todavía no hay denuncias registradas de agosto 2026 y setiembre 2026");
-    expect(tarjeta).toHaveTextContent("Con los datos hasta julio 2026");
-    const fila = (mes: string) => screen.getByRole("cell", { name: mes }).closest("tr") as HTMLElement;
-    expect(fila("agosto 2026")).toHaveTextContent("agosto 2026151149");
-    expect(fila("setiembre 2026")).toHaveTextContent("setiembre 2026147145");
-    expect(tarjeta).toHaveTextContent("agosto 2026: 152 repitiendo el mes anterior y 140 repitiendo el mismo mes del año pasado");
-    expect(tarjeta).toHaveTextContent("setiembre 2026 se apoya además en la estimación del mes anterior, así que puede equivocarse más");
-    expect(tarjeta).toHaveTextContent("estas cifras todavía no entran ahí");
+    expect(titulo).toHaveTextContent("denuncias de robo");
+    expect(tarjeta).toHaveTextContent("Modelo por distrito151Agosto 2026147Setiembre 2026");
+    expect(tarjeta).toHaveTextContent("Modelo con todo Lima149Agosto 2026145Setiembre 2026");
+    expect(tarjeta).toHaveTextContent("Con datos hasta julio 2026");
+    expect(tarjeta).toHaveTextContent("Todavía no hay denuncias registradas de esos meses");
+    expect(tarjeta).toHaveTextContent("Setiembre 2026 se apoya en la estimación de agosto 2026 y puede equivocarse más");
     expect(tarjeta).not.toHaveTextContent("menos que lo registrado"); // no hay dato con qué comparar
     expect(screen.getByText(/En Santiago de Surco se registraron/)).toHaveTextContent("152 denuncias de robo en julio 2026"); // la respuesta de siempre sigue primero
     const texto = document.body.textContent ?? "";
@@ -226,13 +224,19 @@ describe("meses sin denuncias registradas todavía", () => {
     simularApi({ ...DATOS, "/distritos/resumen": tabla(true) });
     pintar("/distritos?delito=ROBO");
     await entrar();
-    for (const t of ["agosto 2026: modelo por distrito", "agosto 2026: modelo con todo Lima", "setiembre 2026: modelo por distrito", "setiembre 2026: modelo con todo Lima"]) {
-      expect(await screen.findByRole("columnheader", { name: new RegExp(`Estimado para ${t}`) })).toBeInTheDocument();
-    }
-    expect(screen.getByRole("cell", { name: "151" })).toBeInTheDocument();
-    expect(screen.getByRole("cell", { name: "145" })).toBeInTheDocument();
-    expect(screen.getByText(/Las últimas columnas son estimaciones de denuncias registradas para agosto 2026 y setiembre 2026, hechas con datos hasta julio 2026/)).toBeInTheDocument();
-    expect(screen.getByText(/no se pueden comparar y no entran en el error promedio/)).toHaveTextContent("setiembre 2026 se apoya además en la estimación del mes anterior");
+    // una columna por mes, con nombre corto, y un selector para elegir qué forma de estimar se ve
+    expect(await screen.findByRole("columnheader", { name: /agosto 2026 \(estimado\)/ })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: /setiembre 2026 \(estimado\)/ })).toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: /Estimado para/ })).not.toBeInTheDocument(); // sin encabezados largos
+    expect(screen.getByRole("cell", { name: "151" })).toBeInTheDocument();      // modelo por distrito, agosto
+    expect(screen.getByRole("cell", { name: "147" })).toBeInTheDocument();      // modelo por distrito, setiembre
+    await userEvent.selectOptions(screen.getByLabelText("Estimación según"), "global");
+    expect(screen.getByRole("cell", { name: "149" })).toBeInTheDocument();      // modelo con todo Lima, agosto
+    expect(screen.getByRole("cell", { name: "145" })).toBeInTheDocument();      // modelo con todo Lima, setiembre
+    expect(screen.queryByRole("cell", { name: "151" })).not.toBeInTheDocument();
+    const nota = screen.getByText(/son estimaciones con datos hasta julio 2026/);
+    expect(nota).toHaveTextContent("Agosto 2026 y setiembre 2026 son estimaciones con datos hasta julio 2026: todavía no hay denuncias registradas de esos meses.");
+    expect(nota).toHaveTextContent("Setiembre 2026 se apoya en la estimación de agosto 2026, así que puede equivocarse más.");
   });
 
   it("sin estimaciones para esos meses no aparece la tarjeta (por ejemplo, si la ejecución no las trae)", async () => {
@@ -240,7 +244,7 @@ describe("meses sin denuncias registradas todavía", () => {
     pintar("/distrito/150140?delito=ROBO");
     await entrar();
     await screen.findByText(/En Santiago de Surco se registraron/);
-    expect(screen.queryByRole("heading", { name: /Estimación para/ })).not.toBeInTheDocument();
+    expect(screen.queryByText(/los modelos estiman/)).not.toBeInTheDocument();
   });
 
   it("en el gráfico los últimos puntos son las estimaciones: se leen en una frase y la tabla los marca sin inventar el registrado", async () => {
@@ -260,7 +264,7 @@ describe("meses sin denuncias registradas todavía", () => {
     for (const mes of ["agosto 2026 (estimación)", "setiembre 2026 (estimación)"]) {
       expect((screen.getByRole("cell", { name: mes }).closest("tr") as HTMLElement)).toHaveTextContent("aún sin dato");
     }
-    expect(screen.getByText(/Los círculos del final son la estimación para agosto 2026 y setiembre 2026/)).toBeInTheDocument();
+    expect(screen.getByText(/Los círculos del final son la estimación de agosto 2026 y setiembre 2026/)).toBeInTheDocument();
   });
 
   it("al mirar solo «antes de nov 2024» no aparecen las estimaciones, porque esos meses son posteriores", async () => {

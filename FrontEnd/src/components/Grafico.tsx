@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { mesCorto, mesTexto, num } from "../lib/formato";
 import type { Serie } from "../lib/tipos";
 
-const W = 860, H = 300, L = 46, R = 16, T = 14, B = 34;
+const W = 860, H = 300, L = 46, R = 50, T = 14, B = 34;
 /** Un paso «redondo» (1, 2, 5, 10, 20, 50…) para que el eje diga 0, 100, 200, 300, 400 y no 0, 99, 199. */
 function pasoBonito(max: number): number {
   const crudo = max / 4, pot = 10 ** Math.floor(Math.log10(crudo)), f = crudo / pot;
@@ -80,6 +80,9 @@ export function Grafico({ serie, distrito }: { serie: Serie; distrito: string })
               <text x={g.X(g.quiebre) + 6} y={T + 14}>Desde nov 2024</text>
             </>
           )}
+          {ms && ms.meses.length > 0 && (
+            <rect x={g.X(ultimoReal)} y={T} width={g.X(p.length - 1) - g.X(ultimoReal) + 36} height={H - T - B} fill="var(--in)" opacity="0.09" />
+          )}
           {[0, 1, 2, 3, 4].map((k) => {
             const v = (g.max * k) / 4;
             return <g key={k}><line x1={L} x2={W - R} y1={g.Y(v)} y2={g.Y(v)} stroke="var(--line)" /><text x={L - 8} y={g.Y(v) + 4} textAnchor="end">{num(Math.round(v))}</text></g>;
@@ -92,10 +95,17 @@ export function Grafico({ serie, distrito }: { serie: Serie; distrito: string })
           {act.registradas != null && <circle cx={g.X(i)} cy={g.Y(act.registradas)} r="4" fill="var(--ink)" />}
           {ms && ms.meses.length > 0 && (
             <>
-              <text x={W - R} y={T + 14} textAnchor="end">Estimación</text>
+              <text x={g.X(p.length - 1) + 34} y={H - B - 8} textAnchor="end">Estimación</text>
               {p.slice(ultimoReal + 1).flatMap((pt, j) => (["global", "local"] as const).map((e) => pt.estimaciones[e] != null && (
                 <circle key={`${j}-${e}`} cx={g.X(ultimoReal + 1 + j)} cy={g.Y(pt.estimaciones[e])} r="4.5" fill="none" stroke={e === "local" ? "var(--in)" : "var(--wa)"} strokeWidth="2.2" />
               )))}
+              {(() => {  // los números del último mes estimado, uno arriba y otro abajo para que no se encimen
+                const ult = p[p.length - 1], k = p.length - 1;
+                const par = (["local", "global"] as const).filter((e) => ult.estimaciones[e] != null).sort((a, b) => ult.estimaciones[b] - ult.estimaciones[a]);
+                return par.map((e, j) => (
+                  <text key={e} x={g.X(k) + 9} y={g.Y(ult.estimaciones[e]) + (j === 0 ? -6 : 14)} fontWeight="700" fill={e === "local" ? "var(--in)" : "var(--wa)"}>{num(ult.estimaciones[e])}</text>
+                ));
+              })()}
             </>
           )}
         </svg>
