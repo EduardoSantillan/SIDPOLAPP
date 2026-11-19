@@ -14,12 +14,21 @@ const ETQ = { local: "Modelo por distrito", global: "Modelo con todo Lima" } as 
  * Lo registrado contra lo que estimaban los dos modelos. Las líneas se distinguen por trazo y por color.
  * Pasar el ratón o usar las flechas del teclado muestra el mes en una frase; debajo hay una tabla con los mismos números.
  */
+type Punto = { fecha: string; registradas: number | null; regimen: string; estimaciones: Record<string, number> };
+
 export function Grafico({ serie, distrito }: { serie: Serie; distrito: string }) {
-  const p = serie.puntos;
-  // Se recuerda el MES elegido, no su posición: si el periodo cambia y ese mes ya no está, se vuelve al último mes disponible.
+  const ms = serie.meses_siguientes;
+  // Los meses que aún no tienen denuncias registradas van al final como puntos sin cifra registrada, solo con la estimación.
+  const p: Punto[] = useMemo(() => {
+    const reales: Punto[] = serie.puntos;
+    const futuros: Punto[] = (ms?.meses ?? []).map((m) => ({ fecha: m.fecha, registradas: null, regimen: "desde_nov_2024", estimaciones: Object.fromEntries(m.estimaciones.map((e) => [e.estrategia, e.valor])) }));
+    return [...reales, ...futuros];
+  }, [serie.puntos, ms]);
+  const ultimoReal = serie.puntos.length - 1;
+  // Se recuerda el MES elegido, no su posición: si el periodo cambia y ese mes ya no está, se vuelve al último mes con denuncias registradas.
   const [elegido, setElegido] = useState<string | null>(null);
   const enSerie = elegido ? p.findIndex((x) => x.fecha === elegido) : -1;
-  const i = enSerie >= 0 ? enSerie : p.length - 1;
+  const i = enSerie >= 0 ? enSerie : ultimoReal;
   const fijar = (k: number | null) => setElegido(k == null ? null : p[Math.max(0, Math.min(p.length - 1, k))]?.fecha ?? null);
 
   const g = useMemo(() => {
@@ -29,7 +38,7 @@ export function Grafico({ serie, distrito }: { serie: Serie; distrito: string })
     const max = paso * 4;
     const X = (k: number) => L + (k / n) * (W - L - R);
     const Y = (v: number) => T + (H - T - B) - (v / max) * (H - T - B);
-    const trazo = (f: (k: number) => number | undefined) => {
+    const trazo = (f: (k: number) => number | null | undefined) => {
       let d = "", baja = true;
       p.forEach((_, k) => {
         const v = f(k);
@@ -80,12 +89,29 @@ export function Grafico({ serie, distrito }: { serie: Serie; distrito: string })
           <path d={g.trazo((k) => p[k].estimaciones.local)} fill="none" stroke="var(--in)" strokeWidth="2.2" strokeDasharray="6 4" />
           <path d={g.trazo((k) => p[k].registradas)} fill="none" stroke="var(--ink)" strokeWidth="2.6" />
           <line x1={g.X(i)} x2={g.X(i)} y1={T} y2={H - B} stroke="var(--ink3)" strokeDasharray="3 3" />
-          <circle cx={g.X(i)} cy={g.Y(act.registradas)} r="4" fill="var(--ink)" />
+          {act.registradas != null && <circle cx={g.X(i)} cy={g.Y(act.registradas)} r="4" fill="var(--ink)" />}
+          {ms && ms.meses.length > 0 && (
+            <>
+              <text x={W - R} y={T + 14} textAnchor="end">Estimación</text>
+              {p.slice(ultimoReal + 1).flatMap((pt, j) => (["global", "local"] as const).map((e) => pt.estimaciones[e] != null && (
+                <circle key={`${j}-${e}`} cx={g.X(ultimoReal + 1 + j)} cy={g.Y(pt.estimaciones[e])} r="4.5" fill="none" stroke={e === "local" ? "var(--in)" : "var(--wa)"} strokeWidth="2.2" />
+              )))}
+            </>
+          )}
         </svg>
         <div className="readout" aria-live="polite">
-          <b>{mesTexto(act.fecha)}</b>: se registraron <b>{num(act.registradas)}</b> denuncias
-          {act.estimaciones.local != null && (
-            <> · {ETQ.local}: <b>{num(act.estimaciones.local)}</b> · {ETQ.global}: <b>{num(act.estimaciones.global ?? 0)}</b></>
+          {act.registradas != null ? (
+            <>
+              <b>{mesTexto(act.fecha)}</b>: se registraron <b>{num(act.registradas)}</b> denuncias
+              {act.estimaciones.local != null && (
+                <> · {ETQ.local}: <b>{num(act.estimaciones.local)}</b> · {ETQ.global}: <b>{num(act.estimaciones.global ?? 0)}</b></>
+              )}
+            </>
+          ) : (
+            <>
+              <b>{mesTexto(act.fecha)}</b>: todavía no hay denuncias registradas. Estimación con datos hasta {mesTexto(ms?.datos_hasta ?? act.fecha)}
+              {" "}· {ETQ.local}: <b>{num(act.estimaciones.local ?? 0)}</b> · {ETQ.global}: <b>{num(act.estimaciones.global ?? 0)}</b>
+            </>
           )}
         </div>
       </div>
@@ -102,7 +128,7 @@ export function Grafico({ serie, distrito }: { serie: Serie; distrito: string })
             <tbody>
               {[...p].reverse().map((x) => (
                 <tr key={x.fecha}>
-                  <td>{mesTexto(x.fecha)}</td><td className="n">{num(x.registradas)}</td>
+                  <td>{mesTexto(x.fecha)}{x.registradas == null && " (estimación)"}</td><td className="n">{x.registradas != null ? num(x.registradas) : "aún sin dato"}</td>
                   <td className="n">{x.estimaciones.local != null ? num(x.estimaciones.local) : "—"}</td>
                   <td className="n">{x.estimaciones.global != null ? num(x.estimaciones.global) : "—"}</td>
                 </tr>

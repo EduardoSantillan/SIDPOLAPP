@@ -17,6 +17,7 @@ from common.aviso import AVISO
 
 DELITO = {"ROBO": "robo", "HURTO": "hurto"}
 PERIODO_TEXTO = {"todo": "Todos los meses evaluados", "antes_nov_2024": "Antes de nov 2024", "desde_nov_2024": "Desde nov 2024"}
+NOTA_ENCADENADO = "Cada mes se apoya en la estimación del anterior, así que el segundo puede equivocarse más."
 MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
 
 
@@ -41,16 +42,23 @@ def metadata(ej, target: str, nombre_distrito: str | None, periodo: str) -> list
     ]
 
 
-def csv_bytes(meta: list[tuple[str, str]], filas: list[dict]) -> bytes:
-    """Líneas de metadata (empiezan con «#») y luego la tabla: una fila por distrito, mes y estrategia."""
+SITUACION = {"evaluado": "comparada con lo registrado", "sin_dato": "estimación: aún no hay denuncias registradas de ese mes"}
+
+
+def csv_bytes(meta: list[tuple[str, str]], filas: list[dict], sin_dato: list[dict] | None = None) -> bytes:
+    """Líneas de metadata (empiezan con «#») y luego la tabla: una fila por distrito, mes y estrategia.
+    Al final, si la ejecución lo trae, las estimaciones del mes sin dato registrado (registradas y diferencia vacías)."""
     b = io.StringIO()
     w = csv.writer(b, lineterminator="\r\n")
     for k, v in meta:
         w.writerow([f"# {k}: {v}"])
-    w.writerow(["distrito", "ubigeo", "mes", "periodo", "denuncias_registradas", "estrategia", "estimado", "diferencia_estimado_menos_registrado"])
+    w.writerow(["distrito", "ubigeo", "mes", "periodo", "denuncias_registradas", "estrategia", "estimado", "diferencia_estimado_menos_registrado", "situacion"])
     for f in filas:
         w.writerow([f["distrito"], f["ubigeo"], f"{f['fecha']:%Y-%m}", R.REGIMEN_API[f["regimen"]], f["observado"],
-                    R.ETIQUETAS[f["estrategia"]], f"{f['estimado']:.2f}", f"{f['estimado'] - f['observado']:.2f}"])
+                    R.ETIQUETAS[f["estrategia"]], f"{f['estimado']:.2f}", f"{f['estimado'] - f['observado']:.2f}", SITUACION["evaluado"]])
+    for f in sin_dato or []:
+        w.writerow([f["distrito"], f["ubigeo"], f"{f['fecha']:%Y-%m}", R.REGIMEN_API[f["regimen"]], "",
+                    R.ETIQUETAS[f["estrategia"]], f"{f['estimado']:.2f}", "", SITUACION["sin_dato"]])
     return b.getvalue().encode("utf-8-sig")  # con marca BOM para que Excel respete las tildes
 
 
@@ -96,7 +104,7 @@ def _coma(x, d: int = 1) -> str:
     return "—" if x is None else f"{x:.{d}f}".replace(".", ",")
 
 
-def pdf_bytes(meta, target: str, nombre_distrito: str | None, periodo: str, filas: list[dict], errores: list) -> bytes:
+def pdf_bytes(meta, target: str, nombre_distrito: str | None, periodo: str, filas: list[dict], errores: list, sin_dato: list[dict] | None = None) -> bytes:
     """`errores`: con un distrito, la lista de `error_promedio` (etiqueta, denuncias_por_mes, mase); para todos, filas ya armadas."""
     est = getSampleStyleSheet()
     normal = ParagraphStyle("n", parent=est["BodyText"], fontName="Helvetica", fontSize=9.5, leading=13)
@@ -121,10 +129,34 @@ def pdf_bytes(meta, target: str, nombre_distrito: str | None, periodo: str, fila
         tabla = [["Forma de estimar", "Error promedio (denuncias por mes)", "MASE"]] + [
             [x["etiqueta"], _coma(x["denuncias_por_mes"]), "No calculable" if x["mase"] is None else _coma(x["mase"], 2)] for x in errores]
         el += [Table(tabla, colWidths=[8 * cm, 5.5 * cm, 3.5 * cm], style=_estilo_tabla()), Spacer(1, 4), Paragraph(esc(R.MASE_EXPLICACION), chico)]
+        if sin_dato:
+            meses = sorted({f["fecha"] for f in sin_dato})
+            por = {m: {f["estrategia"]: f["estimado"] for f in sin_dato if f["fecha"] == m} for m in meses}
+            nombres_meses = " y ".join(mes_texto(m) for m in meses)
+            el += [Spacer(1, 10), Paragraph(f"Estimación para {nombres_meses}", est["Heading3"]),
+                   Paragraph(f"Todavía no hay denuncias registradas de {nombres_meses}. Son estimaciones de denuncias de {DELITO[target]} en {esc(nombre_distrito)} "
+                             f"hechas con datos hasta {mes_texto(ultimo)}. {esc(NOTA_ENCADENADO) if len(meses) > 1 else ''} "
+                             f"Aún no se pueden comparar con lo registrado y no entran en el error ni en el MASE.", normal), Spacer(1, 6)]
+            tabla = [["Mes", "Por distrito", "Con todo Lima", "Mes anterior", "Mismo mes año pasado"]] + [
+                [mes_texto(m)] + [str(round(por[m][e])) for e in R.ESTRATEGIAS] for m in meses]
+            el.append(Table(tabla, colWidths=[3.4 * cm, 3.4 * cm, 3.6 * cm, 3.3 * cm, 3.3 * cm], style=_estilo_tabla()))
     else:
         el.append(Paragraph(f"Último mes evaluado: {mes_texto(ultimo)}. Error promedio en denuncias por mes (menos es mejor).", normal))
         tabla = [["Distrito", f"Registradas {mes_texto(ultimo)}", "Por distrito", "Con todo Lima", "Mes anterior", "Mismo mes año pasado"]] + errores
         el += [Spacer(1, 6), Table(tabla, repeatRows=1, style=_estilo_tabla(), colWidths=[4.6 * cm, 2.6 * cm, 2.3 * cm, 2.5 * cm, 2.4 * cm, 2.6 * cm])]
+        if sin_dato:
+            meses = sorted({f["fecha"] for f in sin_dato})
+            nombres_meses = " y ".join(mes_texto(m) for m in meses)
+            por = {}
+            for f in sin_dato:
+                por.setdefault(f["distrito"], {})[(f["fecha"], f["estrategia"])] = f["estimado"]
+            el += [Spacer(1, 12), Paragraph(f"Estimación para {nombres_meses} (denuncias registradas)", est["Heading3"]),
+                   Paragraph(f"Todavía no hay denuncias registradas de {nombres_meses}: son estimaciones hechas con datos hasta {mes_texto(ultimo)}. "
+                             f"{esc(NOTA_ENCADENADO) if len(meses) > 1 else ''} Aún no se pueden comparar con lo registrado y no entran en el error ni en el MASE.", normal), Spacer(1, 6)]
+            cab = ["Distrito"] + [f"{mes_texto(m)}: {n}" for m in meses for n in ("por distrito", "con todo Lima")]
+            tabla = [cab] + [[d] + [str(round(v[(m, e)])) for m in meses for e in ("local", "global")] for d, v in por.items()]
+            ancho = (17 - 5.2) / (2 * len(meses))
+            el.append(Table(tabla, repeatRows=1, style=_estilo_tabla(), colWidths=[5.2 * cm] + [ancho * cm] * (2 * len(meses))))
     el += [Spacer(1, 14), Paragraph("Datos de esta exportación", est["Heading4"])]
     el += [Paragraph(f"<b>{esc(k)}:</b> {esc(v)}", chico) for k, v in meta[1:]]
     doc.build(el, onFirstPage=_pie, onLaterPages=_pie)

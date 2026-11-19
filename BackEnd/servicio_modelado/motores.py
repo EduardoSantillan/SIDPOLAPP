@@ -139,6 +139,93 @@ def _local(clave_h: str) -> Motor:
     return motor
 
 
+# ---------- meses sin dato registrado: estimación hacia adelante ----------
+# El modelo sigue siendo el de un mes por delante, entrenado UNA vez con los datos hasta el último mes con dato. El primer mes sin dato
+# usa solo datos reales; cada mes siguiente toma la estimación del anterior como si fuera el dato (encadenado), sin redondear.
+def _con_mes(panel: pd.DataFrame, mes: pd.Timestamp, valores: dict | None) -> pd.DataFrame:
+    """Agrega `mes` para todos los distritos: vacío (el mes a estimar) o con las estimaciones puestas como dato."""
+    ubigeos = sorted(panel["ubigeo"].unique())
+    y = [np.nan if valores is None else float(valores[u]) for u in ubigeos]
+    return pd.concat([panel, pd.DataFrame({"ubigeo": ubigeos, "fecha": mes, "y": y})], ignore_index=True)
+
+
+def _futuro(panel: pd.DataFrame, meses: list, estimar) -> pd.DataFrame:
+    """`estimar(panel_con_mes_vacío, mes)` devuelve {ubigeo: estimación}; se encadena mes a mes."""
+    trabajo, filas = panel, []
+    for m in meses:
+        est = estimar(_con_mes(trabajo, m, None), m)
+        filas += [(u, m, v) for u, v in est.items()]
+        trabajo = _con_mes(trabajo, m, est)
+    return pd.DataFrame(filas, columns=["ubigeo", "fecha_objetivo", "y_pred"])
+
+
+def _rezago_futuro(k: int) -> Motor:
+    def motor(panel, meses, ctx=None):
+        def estimar(p, m):
+            y = p.set_index(["ubigeo", "fecha"])["y"].astype(float)
+            origen = m - pd.DateOffset(months=k)
+            faltan = [u for u in sorted(p["ubigeo"].unique()) if (u, origen) not in y.index]
+            if faltan:
+                raise ErrorEjecucion(f"Falta el dato de {origen:%Y-%m} para estimar {m:%Y-%m}.")
+            return {u: y[(u, origen)] for u in sorted(p["ubigeo"].unique())}
+        out = _futuro(panel, meses, estimar)
+        out.attrs["ajustes"] = 0
+        return out
+    return motor
+
+
+def _global_futuro(clave_h: str) -> Motor:
+    def motor(panel, meses, ctx):
+        distritos, d, h = _preparar(panel, meses, ctx, clave_h)
+        modelo = _modelo(ctx, h).fit(d[ctx.variables], d["z"].astype(float))  # entrenado con todo lo que hay, hasta el último mes con dato
+
+        def estimar(p, m):
+            test = construir_variables(p, distritos)
+            test = test[test["fecha"] == m].sort_values("ubigeo")
+            if len(test) != len(distritos):
+                raise ErrorEjecucion(f"En {m:%Y-%m} la estimación necesita los {len(distritos)} distritos y hay {len(test)}.")
+            return dict(zip(test["ubigeo"].astype(str), _a_denuncias(modelo.predict(test[ctx.variables]))))
+        out = _futuro(panel, meses, estimar)
+        out.attrs["ajustes"] = 1
+        return out
+    return motor
+
+
+def _local_futuro(clave_h: str) -> Motor:
+    def motor(panel, meses, ctx):
+        distritos, d, h = _preparar(panel, meses, ctx, clave_h)
+        modelos = {}
+        for u in distritos:
+            tr = d[d["ubigeo"] == u]
+            if tr.empty:
+                raise ErrorEjecucion(f"No hay datos suficientes de {u} para estimar los meses sin dato.")
+            modelos[u] = _modelo(ctx, h).fit(tr[ctx.variables], tr["z"].astype(float))  # un modelo por distrito, con sus datos hasta el último mes
+
+        def estimar(p, m):
+            test = construir_variables(p, distritos)
+            test = test[test["fecha"] == m].sort_values("ubigeo")
+            out = {}
+            for u in distritos:
+                te = test[test["ubigeo"] == u]
+                if len(te) != 1:
+                    raise ErrorEjecucion(f"No hay datos suficientes de {u} para estimar {m:%Y-%m}.")
+                out[u] = float(_a_denuncias(modelos[u].predict(te[ctx.variables]))[0])
+            return out
+        out = _futuro(panel, meses, estimar)
+        out.attrs["ajustes"] = len(distritos)
+        return out
+    return motor
+
+
+# fuente → estimación de meses sin dato (mismas fuentes que MOTORES)
+FUTURO: dict[str, Motor] = {
+    "local_HL": _local_futuro("H_L"),
+    "global_HL": _global_futuro("H_L"),
+    "global_HG": _global_futuro("H_G"),
+    "naive1": _rezago_futuro(1),
+    "naive_seasonal": _rezago_futuro(12),
+}
+
 # fuente (columna `fuente` de la configuración congelada) → motor
 MOTORES: dict[str, Motor] = {
     "local_HL": _local("H_L"),

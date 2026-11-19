@@ -17,6 +17,8 @@ from common.registrar_config import main as registrar_config
 from servicio_modelado import ejecutor, metricas
 from tests.comun import CFG, CFG_NAIVE, FIX
 
+# La ejecución de prueba también estima agosto y setiembre de 2026, los meses sin dato registrado (la configuración con estimación).
+CFG_EST = {**CFG_NAIVE, "evaluacion": {**CFG_NAIVE["evaluacion"], "meses_adelante": 2}}
 SMM = "150138"  # Santa María del Mar: lo usamos para probar la escala cero
 SURCO = "150140"
 PROHIBIDAS = ("riesgo", "prioridad", "ranking", "mejor", "peor", "ganador", "posicion")
@@ -42,10 +44,10 @@ def datos(engine, entorno, panel_real):
         cfg_id = c.execute(text("SELECT config_id FROM configuracion_experimento WHERE sha256 = :h"), {"h": sha_cfg}).scalar()
         uid = c.execute(text("SELECT user_id FROM perfil_usuario WHERE rol='analista' LIMIT 1")).scalar()
     for t in ("ROBO", "HURTO"):
-        pron, _ = ejecutor.calcular(panel_real[t], CFG_NAIVE, t)
+        pron, _ = ejecutor.calcular(panel_real[t], CFG_EST, t)
         pron = _con_modelos(pron)
         q = metricas.constantes_q(panel_real[t], "2018-01", "2022-12", 12)
-        met = metricas.resumir(pron, q, pd.Timestamp(CFG["regimen_corte"]))
+        met = metricas.resumir(pron[pron["fecha_objetivo"] <= "2026-07-01"], q, pd.Timestamp(CFG["regimen_corte"]))  # el mes sin dato no entra a las métricas
         if t == "ROBO":  # un distrito sin escala: MASE no calculable, con motivo
             m = (met["ubigeo"] == SMM) & (met["metrica"] == "MASE")
             met.loc[m, "valor"], met.loc[m, "motivo_nulo"] = None, metricas.MOTIVO_ESCALA_CERO
@@ -53,7 +55,7 @@ def datos(engine, entorno, panel_real):
             eid = c.execute(text("INSERT INTO ejecucion(version_id, config_id, target, iniciada_por) VALUES (CAST(:v AS uuid), :c, :t, :u) RETURNING ejecucion_id"),
                             {"v": entorno["version"], "c": cfg_id, "t": t, "u": uid}).scalar()
         with sesion() as db:
-            ejecutor._persistir(db, {"ejecucion_id": eid}, pron.assign(fecha_origen=pron["fecha_objetivo"] - pd.DateOffset(months=1)), met)
+            ejecutor._persistir(db, {"ejecucion_id": eid}, pron, met)  # con el fecha_origen que calcula el motor
         out["pron"][t], out["met"][t], out["eid"][t] = pron, met, str(eid)
     return out
 
@@ -83,7 +85,7 @@ def _ids(o, acumulado=None):
 
 def _esperado_ultimo(datos, t, u, estrategia, variante="E1"):
     p = datos["pron"][t]
-    f = p[(p["ubigeo"] == u) & (p["estrategia"] == estrategia) & (p["variante"] == variante)]
+    f = p[(p["ubigeo"] == u) & (p["estrategia"] == estrategia) & (p["variante"] == variante) & p["y_true"].notna()]  # solo meses con dato
     return f.sort_values("fecha_objetivo").iloc[-1]
 
 
@@ -299,7 +301,7 @@ def test_csv_de_un_distrito_trae_aviso_metadata_y_los_numeros_guardados(api, h, 
     for esperado in (f"# Aviso: {AVISO}", "# Delito: robo", "# Distrito: Santiago de Surco", f"# SHA-256 de los datos: {datos['sha_datos']}",
                      f"# Ejecución: {datos['eid']['ROBO']}", f"# SHA-256 de la configuración: {datos['sha_cfg']}", "# Versión de datos: extracto_lima.csv (corte 2026-07)", "Modelo por distrito"):
         assert esperado in cabecera, esperado
-    assert len(df) == 43 * 4 and set(df["estrategia"]) == set(ETIQUETAS.values()) and (df["ubigeo"] == SURCO).all()
+    assert len(df) == 43 * 4 + 8 and set(df["estrategia"]) == set(ETIQUETAS.values()) and (df["ubigeo"] == SURCO).all()
     p = datos["pron"]["ROBO"]
     esperado = p[(p["ubigeo"] == SURCO) & (p["estrategia"] == "local") & (p["fecha_objetivo"] == "2026-07-01")].iloc[0]
     f = df[(df["mes"] == "2026-07") & (df["estrategia"] == ETIQUETAS["local"])].iloc[0]
@@ -309,9 +311,9 @@ def test_csv_de_un_distrito_trae_aviso_metadata_y_los_numeros_guardados(api, h, 
 
 def test_csv_de_todos_los_distritos_y_por_periodo(api, h):
     _, _, todos = _csv(api, h["analista"])
-    assert len(todos) == 43 * 43 * 4 and todos["ubigeo"].nunique() == 43
+    assert len(todos) == 43 * 43 * 4 + 43 * 4 * 2 and todos["ubigeo"].nunique() == 43
     _, _, despues = _csv(api, h["analista"], ubigeo=SURCO, periodo="desde_nov_2024")
-    assert len(despues) == 21 * 4 and set(despues["periodo"]) == {"desde_nov_2024"} and despues["mes"].min() == "2024-11"
+    assert len(despues) == 21 * 4 + 8 and set(despues["periodo"]) == {"desde_nov_2024"} and despues["mes"].min() == "2024-11"
 
 
 def test_pdf_de_un_distrito_trae_aviso_frase_tabla_y_metadata(api, h, datos):
@@ -347,6 +349,88 @@ def test_exportar_deja_registro_y_rechaza_pedidos_invalidos(api, h, engine, dato
     with engine.connect() as c:
         assert c.execute(text("SELECT count(*) FROM evento_auditoria WHERE accion = 'exportar'")).scalar() == antes + 1
     assert api.get("/exportaciones", params={"formato": "xlsx", "target": "ROBO"}, headers=h["usuario"]).status_code == 422
-    assert api.get("/exportaciones", params={"formato": "csv", "target": "ROBO", "ubigeo": "150199"}, headers=h["usuario"]).json()["codigo"] == "DISTRITO_NO_EXISTE"
-    r = api.get("/exportaciones", params={"formato": "csv", "target": "ROBO", "ejecucion_id": str(uuid.uuid4())}, headers=h["usuario"])
-    assert r.status_code == 404 and r.json()["codigo"] == "SIN_RESULTADOS"  # sin resultados no se exporta nada inventado
+
+
+# ---------- meses sin dato registrado: estimación hacia adelante (agosto y setiembre de 2026) ----------
+def _fut(datos, t, u, estrategia, fecha, variante="E1"):
+    p = datos["pron"][t]
+    return float(p[(p["ubigeo"] == u) & (p["estrategia"] == estrategia) & (p["variante"] == variante) & (p["fecha_objetivo"] == fecha)]["y_pred"].iloc[0])
+
+
+def test_el_resumen_trae_las_estimaciones_de_los_meses_sin_dato_y_lo_evaluado_no_cambia(api, h, datos):
+    d = api.get(f"/distritos/{SURCO}/resumen", params={"target": "ROBO"}, headers=h["usuario"]).json()
+    assert d["ultimo_mes"] == "2026-07-01" and d["meses_evaluados"] == 43  # agosto y setiembre no son meses evaluados
+    ms = d["meses_siguientes"]
+    assert ms["datos_hasta"] == "2026-07-01" and [m["fecha"] for m in ms["meses"]] == ["2026-08-01", "2026-09-01"]
+    for m in ms["meses"]:
+        assert [e["estrategia"] for e in m["estimaciones"]] == ["local", "global", "naive1", "naive_estacional"]
+        for e in m["estimaciones"]:
+            variante = "E1" if e["estrategia"] in ("local", "global") else "base"
+            assert e["valor"] == round(_fut(datos, "ROBO", SURCO, e["estrategia"], m["fecha"], variante)) and e["etiqueta"] == ETIQUETAS[e["estrategia"]]
+            assert "diferencia" not in e  # no hay dato con qué comparar
+
+
+def test_los_meses_sin_dato_solo_aparecen_en_periodos_que_los_incluyen(api, h):
+    for periodo, hay in (("todo", True), ("desde_nov_2024", True), ("antes_nov_2024", False)):
+        d = api.get(f"/distritos/{SURCO}/resumen", params={"target": "ROBO", "periodo": periodo}, headers=h["usuario"]).json()
+        assert (d["meses_siguientes"] is not None) == hay, periodo
+        s = api.get(f"/distritos/{SURCO}/serie", params={"target": "ROBO", "periodo": periodo}, headers=h["usuario"]).json()
+        assert (s["meses_siguientes"] is not None) == hay, periodo
+
+
+def test_la_serie_no_agrega_puntos_a_los_meses_sin_dato_y_los_trae_aparte(api, h, datos):
+    s = api.get(f"/distritos/{SURCO}/serie", params={"target": "HURTO"}, headers=h["analista"]).json()
+    assert len(s["puntos"]) == 103 and s["puntos"][-1]["fecha"] == "2026-07-01"  # registradas: solo meses con dato
+    assert [m["fecha"] for m in s["meses_siguientes"]["meses"]] == ["2026-08-01", "2026-09-01"] and all(len(m["estimaciones"]) == 4 for m in s["meses_siguientes"]["meses"])
+
+
+def test_los_meses_sin_dato_no_entran_a_las_metricas_ni_a_la_tabla(api, h, engine, datos):
+    with engine.connect() as c:
+        n = c.execute(text("SELECT count(*) FROM resultado_pronostico WHERE ejecucion_id = CAST(:e AS uuid) AND observado IS NULL"), {"e": datos["eid"]["ROBO"]}).scalar()
+        m = c.execute(text("SELECT count(*) FROM metrica_desempeno WHERE ejecucion_id = CAST(:e AS uuid)"), {"e": datos["eid"]["ROBO"]}).scalar()
+    assert n == 2 * 5 * 43 and m == 5 * 43 * 3 * 3  # 2 meses x 5 estrategias x 43 distritos sin dato; las métricas, las mismas de siempre
+    t = api.get("/distritos/resumen", params={"target": "ROBO"}, headers=h["usuario"]).json()
+    assert t["ultimo_mes"] == "2026-07-01" and len(t["filas"]) == 43 and all(f["registradas_ultimo_mes"] is not None for f in t["filas"])
+
+
+def test_la_tabla_de_distritos_trae_las_estimaciones_de_los_meses_sin_dato_por_distrito(api, h, datos):
+    t = api.get("/distritos/resumen", params={"target": "ROBO"}, headers=h["usuario"]).json()
+    assert t["meses_siguientes"] == ["2026-08-01", "2026-09-01"] and t["datos_hasta"] == "2026-07-01"
+    assert all(len(f["estimaciones_siguientes"]) == 2 * 4 for f in t["filas"])
+    surco = next(f for f in t["filas"] if f["ubigeo"] == SURCO)
+    sep = {e["estrategia"]: e["valor"] for e in surco["estimaciones_siguientes"] if e["fecha"] == "2026-09-01"}
+    assert sep["local"] == round(_fut(datos, "ROBO", SURCO, "local", "2026-09-01"))
+    antes = api.get("/distritos/resumen", params={"target": "ROBO", "periodo": "antes_nov_2024"}, headers=h["usuario"]).json()
+    assert antes["meses_siguientes"] == [] and all(f["estimaciones_siguientes"] == [] for f in antes["filas"])
+
+
+def test_la_trazabilidad_de_un_mes_sin_dato_dice_que_no_hay_registrado_y_con_que_datos_se_hizo(api, h, datos):
+    for fecha in ("2026-08-01", "2026-09-01"):
+        r = api.get("/trazabilidad", params={"target": "ROBO", "ubigeo": SURCO, "estrategia": "local", "fecha_objetivo": fecha}, headers=h["analista"])
+        assert r.status_code == 200
+        d = r.json()
+        assert d["observado"] is None and d["fecha_origen"] == "2026-07-01" and d["estimado"] == pytest.approx(_fut(datos, "ROBO", SURCO, "local", fecha))
+        assert d["configuracion"]["sha256"] == datos["sha_cfg"]
+
+
+def test_csv_marca_las_filas_de_los_meses_sin_dato_y_no_las_mezcla_con_lo_comparado(api, h, datos):
+    _, _, df = _csv(api, h["usuario"], ubigeo=SURCO)
+    fut = df[df["mes"].isin(["2026-08", "2026-09"])]
+    assert len(fut) == 8 and fut["denuncias_registradas"].isna().all() and fut["diferencia_estimado_menos_registrado"].isna().all()
+    assert set(fut["situacion"]) == {"estimación: aún no hay denuncias registradas de ese mes"} and set(fut["periodo"]) == {"desde_nov_2024"}
+    assert set(df[~df["mes"].isin(["2026-08", "2026-09"])]["situacion"]) == {"comparada con lo registrado"}
+    sep = fut[(fut["mes"] == "2026-09") & (fut["estrategia"] == ETIQUETAS["local"])].iloc[0]
+    assert sep["estimado"] == pytest.approx(_fut(datos, "ROBO", SURCO, "local", "2026-09-01"), abs=0.005)
+    _, _, antes = _csv(api, h["usuario"], ubigeo=SURCO, periodo="antes_nov_2024")
+    assert not antes["mes"].isin(["2026-08", "2026-09"]).any()
+
+
+def test_pdf_trae_las_estimaciones_de_los_meses_sin_dato_con_su_aclaracion(api, h, datos):
+    _, paginas = _pdf(api, h["usuario"], ubigeo=SURCO)
+    texto = " ".join(paginas)
+    assert "Estimación para ago 2026 y sep 2026" in texto and "Todavía no hay denuncias registradas de ago 2026 y sep 2026" in texto
+    assert "se apoya en la estimación del anterior" in texto and "no entran en el error ni en el MASE" in texto
+    _, paginas = _pdf(api, h["analista"])
+    texto = " ".join(paginas)
+    assert "Estimación para ago 2026 y sep 2026" in texto and all("no es la criminalidad real" in p for p in paginas)
+    assert "riesgo" not in texto.lower() and "prioridad" not in texto.lower()

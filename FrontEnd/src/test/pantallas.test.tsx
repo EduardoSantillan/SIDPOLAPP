@@ -39,6 +39,24 @@ const DATOS: Rutas = {
   },
 };
 
+// Los meses siguientes al último con dato (agosto y setiembre 2026): se estiman, pero todavía no hay denuncias registradas con qué compararlos.
+const est = (l: number, g: number, n1: number, ne: number) => [
+  { estrategia: "local", etiqueta: "Modelo por distrito", valor: l },
+  { estrategia: "global", etiqueta: "Modelo con todo Lima", valor: g },
+  { estrategia: "naive1", etiqueta: "Repetir el mes anterior", valor: n1 },
+  { estrategia: "naive_estacional", etiqueta: "Repetir el mismo mes del año pasado", valor: ne },
+];
+const SIGUIENTES = { datos_hasta: "2026-07-01", meses: [{ fecha: "2026-08-01", estimaciones: est(151, 149, 152, 140) }, { fecha: "2026-09-01", estimaciones: est(147, 145, 152, 138) }] };
+type CuerpoRuta = { cuerpo: Record<string, unknown> };
+const CON_SIGUIENTES: Rutas = {
+  ...DATOS,
+  "/distritos/150140/resumen": { cuerpo: { ...(DATOS["/distritos/150140/resumen"] as CuerpoRuta).cuerpo, meses_siguientes: SIGUIENTES } },
+  "/distritos/150140/serie": (url) => {
+    const base = (DATOS["/distritos/150140/serie"] as (u: URL) => CuerpoRuta)(url).cuerpo;
+    return { cuerpo: { ...base, meses_siguientes: url.searchParams.get("periodo") === "antes_nov_2024" ? null : SIGUIENTES } };
+  },
+};
+
 afterEach(() => vi.unstubAllGlobals());
 
 async function entrar(rol: "usuario" | "analista" | "administrador" = "usuario") {
@@ -168,6 +186,90 @@ describe("Inicio y Mi distrito", () => {
     await screen.findByText(/En Santiago de Surco se registraron/);
     await userEvent.selectOptions(screen.getByLabelText("Periodo"), "desde_nov_2024");
     await waitFor(() => expect(llamadas.some((l) => l.url.pathname.endsWith("/serie") && l.url.searchParams.get("periodo") === "desde_nov_2024")).toBe(true));
+  });
+});
+
+describe("meses sin denuncias registradas todavía", () => {
+  it("lo dice con todas sus letras: estimaciones con datos hasta el último mes, setiembre apoyado en agosto, sin compararlas ni mezclarlas con el error", async () => {
+    simularApi(CON_SIGUIENTES);
+    pintar("/distrito/150140?delito=ROBO");
+    await entrar();
+    const titulo = await screen.findByRole("heading", { name: "Estimación para agosto 2026 y setiembre 2026" });
+    const tarjeta = titulo.closest(".card") as HTMLElement;
+    expect(tarjeta).toHaveTextContent("Todavía no hay denuncias registradas de agosto 2026 y setiembre 2026");
+    expect(tarjeta).toHaveTextContent("Con los datos hasta julio 2026");
+    const fila = (mes: string) => screen.getByRole("cell", { name: mes }).closest("tr") as HTMLElement;
+    expect(fila("agosto 2026")).toHaveTextContent("agosto 2026151149");
+    expect(fila("setiembre 2026")).toHaveTextContent("setiembre 2026147145");
+    expect(tarjeta).toHaveTextContent("agosto 2026: 152 repitiendo el mes anterior y 140 repitiendo el mismo mes del año pasado");
+    expect(tarjeta).toHaveTextContent("setiembre 2026 se apoya además en la estimación del mes anterior, así que puede equivocarse más");
+    expect(tarjeta).toHaveTextContent("estas cifras todavía no entran ahí");
+    expect(tarjeta).not.toHaveTextContent("menos que lo registrado"); // no hay dato con qué comparar
+    expect(screen.getByText(/En Santiago de Surco se registraron/)).toHaveTextContent("152 denuncias de robo en julio 2026"); // la respuesta de siempre sigue primero
+    const texto = document.body.textContent ?? "";
+    for (const prohibida of ["SHA", "naïve", "naive", "pre_break", "post_break", "horizonte", "riesgo", "prioridad", "ranking", "Local", "Global", "peligro"]) {
+      expect(texto).not.toContain(prohibida);
+    }
+  });
+
+  it("en «Todos los distritos» las estimaciones van en columnas aparte, con su aclaración", async () => {
+    const f = (ubigeo: string, distrito: string, reg: number, v: number[]) => ({
+      ubigeo, distrito, registradas_ultimo_mes: reg,
+      estimaciones_siguientes: [
+        { fecha: "2026-08-01", estrategia: "local", etiqueta: "Modelo por distrito", valor: v[0] }, { fecha: "2026-08-01", estrategia: "global", etiqueta: "Modelo con todo Lima", valor: v[1] },
+        { fecha: "2026-09-01", estrategia: "local", etiqueta: "Modelo por distrito", valor: v[2] }, { fecha: "2026-09-01", estrategia: "global", etiqueta: "Modelo con todo Lima", valor: v[3] }],
+      error_promedio: [{ estrategia: "local", etiqueta: "Modelo por distrito", denuncias_por_mes: 13, mase: 0.6 },
+                       { estrategia: "global", etiqueta: "Modelo con todo Lima", denuncias_por_mes: 12, mase: 0.5 }] });
+    const tabla = (con: boolean) => ({ cuerpo: { target: "ROBO", periodo: "todo", ultimo_mes: ultimo.fecha, mase_explicacion: "x", ejecucion_id: "e1", aviso: AVISO,
+      meses_siguientes: con ? ["2026-08-01", "2026-09-01"] : [], datos_hasta: con ? "2026-07-01" : null,
+      filas: [f("150131", "San Isidro", 40, [42, 39, 41, 38]), f("150140", "Santiago de Surco", 152, [151, 149, 147, 145])] } });
+    simularApi({ ...DATOS, "/distritos/resumen": tabla(true) });
+    pintar("/distritos?delito=ROBO");
+    await entrar();
+    for (const t of ["agosto 2026: modelo por distrito", "agosto 2026: modelo con todo Lima", "setiembre 2026: modelo por distrito", "setiembre 2026: modelo con todo Lima"]) {
+      expect(await screen.findByRole("columnheader", { name: new RegExp(`Estimado para ${t}`) })).toBeInTheDocument();
+    }
+    expect(screen.getByRole("cell", { name: "151" })).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "145" })).toBeInTheDocument();
+    expect(screen.getByText(/Las últimas columnas son estimaciones de denuncias registradas para agosto 2026 y setiembre 2026, hechas con datos hasta julio 2026/)).toBeInTheDocument();
+    expect(screen.getByText(/no se pueden comparar y no entran en el error promedio/)).toHaveTextContent("setiembre 2026 se apoya además en la estimación del mes anterior");
+  });
+
+  it("sin estimaciones para esos meses no aparece la tarjeta (por ejemplo, si la ejecución no las trae)", async () => {
+    simularApi(DATOS);
+    pintar("/distrito/150140?delito=ROBO");
+    await entrar();
+    await screen.findByText(/En Santiago de Surco se registraron/);
+    expect(screen.queryByRole("heading", { name: /Estimación para/ })).not.toBeInTheDocument();
+  });
+
+  it("en el gráfico los últimos puntos son las estimaciones: se leen en una frase y la tabla los marca sin inventar el registrado", async () => {
+    simularApi(CON_SIGUIENTES);
+    pintar("/distrito/150140?delito=ROBO");
+    await entrar();
+    const grafico = await screen.findByRole("img", { name: /Usa las flechas/ });
+    const lectura = () => document.querySelector(".readout") as HTMLElement;
+    expect(lectura()).toHaveTextContent("julio 2026"); // al abrir se ve el último mes con denuncias registradas
+    fireEvent.keyDown(grafico, { key: "ArrowRight" });
+    expect(lectura()).toHaveTextContent("agosto 2026: todavía no hay denuncias registradas");
+    expect(lectura()).toHaveTextContent("Modelo por distrito: 151");
+    fireEvent.keyDown(grafico, { key: "End" });
+    expect(lectura()).toHaveTextContent("setiembre 2026: todavía no hay denuncias registradas");
+    expect(lectura()).toHaveTextContent("Modelo por distrito: 147");
+    expect(lectura()).toHaveTextContent("Modelo con todo Lima: 145");
+    for (const mes of ["agosto 2026 (estimación)", "setiembre 2026 (estimación)"]) {
+      expect((screen.getByRole("cell", { name: mes }).closest("tr") as HTMLElement)).toHaveTextContent("aún sin dato");
+    }
+    expect(screen.getByText(/Los círculos del final son la estimación para agosto 2026 y setiembre 2026/)).toBeInTheDocument();
+  });
+
+  it("al mirar solo «antes de nov 2024» no aparecen las estimaciones, porque esos meses son posteriores", async () => {
+    simularApi(CON_SIGUIENTES);
+    pintar("/distrito/150140?delito=ROBO&periodo=antes_nov_2024");
+    await entrar();
+    await screen.findByRole("img", { name: /Usa las flechas/ });
+    expect(screen.queryByText(/Los círculos del final/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("cell", { name: /agosto 2026 \(estimación\)/ })).not.toBeInTheDocument(); // el gráfico no los trae; el resumen de arriba sí (usa todos los meses)
   });
 });
 

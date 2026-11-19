@@ -542,6 +542,32 @@ export interface components {
             /** Estado */
             estado: string;
         };
+        /** EstimacionFechaOut */
+        EstimacionFechaOut: {
+            /** Fecha */
+            fecha: string;
+            /**
+             * Estrategia
+             * @enum {string}
+             */
+            estrategia: "local" | "global" | "naive1" | "naive_estacional";
+            /** Etiqueta */
+            etiqueta: string;
+            /** Valor */
+            valor: number;
+        };
+        /** EstimacionMesSinDatoOut */
+        EstimacionMesSinDatoOut: {
+            /**
+             * Estrategia
+             * @enum {string}
+             */
+            estrategia: "local" | "global" | "naive1" | "naive_estacional";
+            /** Etiqueta */
+            etiqueta: string;
+            /** Valor */
+            valor: number;
+        };
         /** EstimacionOut */
         EstimacionOut: {
             /**
@@ -608,6 +634,11 @@ export interface components {
             registradas_ultimo_mes?: number | null;
             /** Error Promedio */
             error_promedio: components["schemas"]["ErrorEstrategiaOut"][];
+            /**
+             * Estimaciones Siguientes
+             * @default []
+             */
+            estimaciones_siguientes: components["schemas"]["EstimacionFechaOut"][];
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -642,6 +673,24 @@ export interface components {
             distritos: number;
             /** Mediana */
             mediana?: number | null;
+        };
+        /** MesSinDatoOut */
+        MesSinDatoOut: {
+            /** Fecha */
+            fecha: string;
+            /** Estimaciones */
+            estimaciones: components["schemas"]["EstimacionMesSinDatoOut"][];
+        };
+        /**
+         * MesesSiguientesOut
+         * @description Estimaciones de los meses siguientes al último con dato registrado: todavía no se pueden comparar y no entran a ninguna métrica.
+         *     Cada mes se apoya en los anteriores: el primero solo en datos registrados; los demás, además, en las estimaciones previas.
+         */
+        MesesSiguientesOut: {
+            /** Datos Hasta */
+            datos_hasta: string;
+            /** Meses */
+            meses: components["schemas"]["MesSinDatoOut"][];
         };
         /** MetricasEstrategiaOut */
         MetricasEstrategiaOut: {
@@ -767,6 +816,7 @@ export interface components {
             /** Meses Evaluados */
             meses_evaluados: number;
             rango_habitual: components["schemas"]["RangoOut"];
+            meses_siguientes?: components["schemas"]["MesesSiguientesOut"] | null;
             /** Ejecucion Id */
             ejecucion_id: string;
             /** Aviso */
@@ -809,6 +859,7 @@ export interface components {
             puntos: components["schemas"]["PuntoSerieOut"][];
             /** Estrategias */
             estrategias: components["schemas"]["EtiquetaEstrategiaOut"][];
+            meses_siguientes?: components["schemas"]["MesesSiguientesOut"] | null;
             /** Ejecucion Id */
             ejecucion_id: string;
             /** Aviso */
@@ -830,6 +881,13 @@ export interface components {
             ultimo_mes: string;
             /** Mase Explicacion */
             mase_explicacion: string;
+            /**
+             * Meses Siguientes
+             * @default []
+             */
+            meses_siguientes: string[];
+            /** Datos Hasta */
+            datos_hasta?: string | null;
             /** Filas */
             filas: components["schemas"]["FilaTablaOut"][];
             /** Ejecucion Id */

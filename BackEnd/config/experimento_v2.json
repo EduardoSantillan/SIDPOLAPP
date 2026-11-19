@@ -1,0 +1,240 @@
+{
+  "congelada": {
+    "calibration_months": [
+      "2022-01-01",
+      "2022-02-01",
+      "2022-03-01",
+      "2022-04-01",
+      "2022-05-01",
+      "2022-06-01",
+      "2022-07-01",
+      "2022-08-01",
+      "2022-09-01",
+      "2022-10-01",
+      "2022-11-01",
+      "2022-12-01"
+    ],
+    "dz_features": [
+      "lag_1",
+      "r_lag_2",
+      "r_lag_3",
+      "r_lag_6",
+      "r_lag_12",
+      "r_rolling_mean_3",
+      "r_rolling_mean_6",
+      "mes_sin",
+      "mes_cos",
+      "UBIGEO"
+    ],
+    "dz_grid": {
+      "max_depth": [
+        1,
+        2,
+        4,
+        6
+      ],
+      "n_estimators": [
+        25,
+        50,
+        100,
+        300
+      ],
+      "ridge_alpha": [
+        0.01,
+        0.1,
+        1.0,
+        10.0,
+        100.0
+      ]
+    },
+    "dz_params": {
+      "colsample_bytree": 1.0,
+      "enable_categorical": true,
+      "learning_rate": 0.05,
+      "min_child_weight": 5,
+      "n_jobs": 1,
+      "objective": "reg:squarederror",
+      "random_state": 42,
+      "reg_alpha": 0.0,
+      "reg_lambda": 1.0,
+      "subsample": 1.0,
+      "tree_method": "hist"
+    },
+    "e3_excluded_ubigeo": "150138",
+    "input_hashes": {
+      "sidpol_mase_constants.csv": "f4493cd68871d3c0d3eb62bf745280b72538ac928ad3d8c38cc0b895077ca896",
+      "sidpol_panel_lima_robo_hurto.csv": "d0be7ea4da1ad68cf88b2b6bf3c0b76abc063b83c4897aa83746ec322885f868"
+    },
+    "level_calibration_origin": "reutilizado_de_la_corrida_v2",
+    "level_features": [
+      "lag_1",
+      "lag_2",
+      "lag_3",
+      "lag_6",
+      "lag_12",
+      "rolling_mean_3",
+      "rolling_mean_6",
+      "mes_sin",
+      "mes_cos",
+      "UBIGEO"
+    ],
+    "level_grid": [
+      {
+        "max_depth": 2,
+        "n_estimators": 100
+      },
+      {
+        "max_depth": 2,
+        "n_estimators": 300
+      },
+      {
+        "max_depth": 3,
+        "n_estimators": 100
+      },
+      {
+        "max_depth": 3,
+        "n_estimators": 300
+      },
+      {
+        "max_depth": 4,
+        "n_estimators": 100
+      },
+      {
+        "max_depth": 4,
+        "n_estimators": 300
+      },
+      {
+        "max_depth": 6,
+        "n_estimators": 100
+      },
+      {
+        "max_depth": 6,
+        "n_estimators": 300
+      }
+    ],
+    "level_params": {
+      "colsample_bytree": 1.0,
+      "enable_categorical": true,
+      "learning_rate": 0.05,
+      "min_child_weight": 5,
+      "n_jobs": -1,
+      "objective": "reg:squarederror",
+      "random_state": 42,
+      "reg_alpha": 0.0,
+      "reg_lambda": 1.0,
+      "subsample": 1.0,
+      "tree_method": "hist"
+    },
+    "ridge_features": [
+      "r_lag_2",
+      "r_lag_3",
+      "r_lag_6",
+      "r_lag_12",
+      "r_rolling_mean_3",
+      "r_rolling_mean_6",
+      "mes_sin",
+      "mes_cos"
+    ],
+    "score_definition": "mediana de 43 distritos del MASE del distrito (media de 12 meses de 2022)",
+    "selected": {
+      "HURTO": {
+        "H_G": {
+          "Score": 0.5557761938191574,
+          "max_depth": 6,
+          "n_estimators": 100
+        },
+        "H_G5": {
+          "Score": 0.4963924691669253,
+          "max_depth": 2,
+          "n_estimators": 25
+        },
+        "H_L": {
+          "Score": 0.6290152898431488,
+          "max_depth": 2,
+          "n_estimators": 100
+        },
+        "H_L5": {
+          "Score": 0.5238359119189241,
+          "max_depth": 1,
+          "n_estimators": 25
+        },
+        "naive1_Score_2022": 0.5299610894941635,
+        "ridge_Score": 0.5395336157489767,
+        "ridge_alpha": 10.0
+      },
+      "ROBO": {
+        "H_G": {
+          "Score": 0.5222077546296297,
+          "max_depth": 6,
+          "n_estimators": 100
+        },
+        "H_G5": {
+          "Score": 0.4916138588837325,
+          "max_depth": 4,
+          "n_estimators": 300
+        },
+        "H_L": {
+          "Score": 0.606185080564574,
+          "max_depth": 2,
+          "n_estimators": 100
+        },
+        "H_L5": {
+          "Score": 0.5125884260214275,
+          "max_depth": 1,
+          "n_estimators": 25
+        },
+        "naive1_Score_2022": 0.5283018867924529,
+        "ridge_Score": 0.5420657157974881,
+        "ridge_alpha": 100.0
+      }
+    },
+    "tie_break": "menor max_depth, luego menor n_estimators; ridge: mayor alpha",
+    "version": "v0.8.5"
+  },
+  "escala_mase": {
+    "estacionalidad_meses": 12,
+    "ventana_fin": "2022-12",
+    "ventana_inicio": "2018-01"
+  },
+  "estrategias": [
+    {
+      "entrena": true,
+      "estrategia": "local",
+      "fuente": "local_HL",
+      "variante": "E1"
+    },
+    {
+      "entrena": true,
+      "estrategia": "global",
+      "fuente": "global_HL",
+      "variante": "E1"
+    },
+    {
+      "entrena": true,
+      "estrategia": "global",
+      "fuente": "global_HG",
+      "variante": "E1b"
+    },
+    {
+      "entrena": false,
+      "estrategia": "naive1",
+      "fuente": "naive1",
+      "variante": "base"
+    },
+    {
+      "entrena": false,
+      "estrategia": "naive_estacional",
+      "fuente": "naive_seasonal",
+      "variante": "base"
+    }
+  ],
+  "evaluacion": {
+    "meses_adelante": 2,
+    "primer_mes_pronosticado": "2023-01",
+    "ultimo_mes_pronosticado": "2026-07"
+  },
+  "horizonte_meses": 1,
+  "nombre": "Experimento SIDPOL (configuración congelada)",
+  "regimen_corte": "2024-11-01",
+  "version": "v0.8.5+estimacion-2-meses"
+}

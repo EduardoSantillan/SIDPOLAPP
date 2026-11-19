@@ -30,6 +30,19 @@ def _error_promedio(met: dict) -> list[dict]:
     return filas
 
 
+def _meses_siguientes(db: Session, ej, ubigeo: str, periodo: str) -> dict | None:
+    """Estimaciones de los meses sin dato registrado. Son posteriores a nov 2024, así que no aparecen al mirar solo «antes de nov 2024»."""
+    if periodo == "antes_nov_2024":
+        return None
+    p = R.meses_sin_dato(db, ej, ubigeo)
+    if not p:
+        return None
+    meses = [{"fecha": f.isoformat(), "estimaciones": [{"estrategia": e, "etiqueta": R.ETIQUETAS[e], "valor": round(p["estimaciones"][f][ubigeo][e])}
+                                                      for e in R.ESTRATEGIAS if e in p["estimaciones"][f].get(ubigeo, {})]}
+             for f in p["meses"] if ubigeo in p["estimaciones"][f]]
+    return {"datos_hasta": p["datos_hasta"].isoformat(), "meses": meses} if meses else None
+
+
 @router.get("/distritos", response_model=list[DistritoOut])
 def listar_distritos(db: Session = Depends(get_db)):
     return [{"ubigeo": d["ubigeo"], "nombre": d["nombre"]} for d in R.distritos(db)]
@@ -48,8 +61,11 @@ def tabla(target: Target, periodo: Periodo = "todo", ubigeos: str | None = None,
     obs = {u: y for u, y in db.execute(
         text("SELECT ubigeo, y FROM observacion_mensual WHERE version_id = :v AND target = :t AND fecha = :f"),
         {"v": ej["version_id"], "t": target, "f": ultimo}).all()}
+    pm = None if periodo == "antes_nov_2024" else R.meses_sin_dato(db, ej)  # los meses sin dato registrado son posteriores a nov 2024
     filas = [{"ubigeo": d["ubigeo"], "distrito": d["nombre"], "registradas_ultimo_mes": obs.get(d["ubigeo"]),
-              "error_promedio": _error_promedio(met.get(d["ubigeo"], {}))}
+              "error_promedio": _error_promedio(met.get(d["ubigeo"], {})),
+              "estimaciones_siguientes": [{"fecha": f.isoformat(), "estrategia": e, "etiqueta": R.ETIQUETAS[e], "valor": round(pm["estimaciones"][f][d["ubigeo"]][e])}
+                                          for f in (pm["meses"] if pm else []) for e in R.ESTRATEGIAS if e in pm["estimaciones"][f].get(d["ubigeo"], {})]}
              for d in R.distritos(db) if lista is None or d["ubigeo"] in lista]
     if orden != "distrito":  # solo a pedido de la persona; por defecto es alfabético
         def valor(f):
@@ -61,6 +77,7 @@ def tabla(target: Target, periodo: Periodo = "todo", ubigeos: str | None = None,
     elif dir == "desc":
         filas.reverse()
     return {"target": target, "periodo": periodo, "ultimo_mes": ultimo.isoformat(), "mase_explicacion": R.MASE_EXPLICACION,
+            "meses_siguientes": [f.isoformat() for f in pm["meses"]] if pm else [], "datos_hasta": pm["datos_hasta"].isoformat() if pm else None,
             "filas": filas, "ejecucion_id": str(ej["ejecucion_id"]), "aviso": AVISO}
 
 
@@ -84,7 +101,8 @@ def resumen(ubigeo: str, target: Target, periodo: Periodo = "todo", ejecucion_id
     return {"ubigeo": ubigeo, "distrito": nombre, "target": target, "periodo": periodo,
             "ultimo_mes": ultimo.isoformat(), "registradas_ultimo_mes": registradas, "estimaciones_ultimo_mes": estimaciones,
             "error_promedio": _error_promedio(met), "mase_explicacion": R.MASE_EXPLICACION, "meses_evaluados": len(meses),
-            "rango_habitual": {"min": rango[0], "max": rango[1], "meses": 12}, "ejecucion_id": str(ej["ejecucion_id"]), "aviso": AVISO}
+            "rango_habitual": {"min": rango[0], "max": rango[1], "meses": 12}, "meses_siguientes": _meses_siguientes(db, ej, ubigeo, periodo),
+            "ejecucion_id": str(ej["ejecucion_id"]), "aviso": AVISO}
 
 
 @router.get("/distritos/{ubigeo}/serie", response_model=SerieOut)
@@ -106,7 +124,7 @@ def serie(ubigeo: str, target: Target, periodo: Periodo = "todo", ejecucion_id: 
     return {"ubigeo": ubigeo, "target": target, "periodo": periodo,
             "cambio_registro": {"fecha": ej["corte"], "texto": "Desde nov 2024 cambió la forma de registrar"},
             "puntos": puntos, "estrategias": [{"estrategia": e, "etiqueta": R.ETIQUETAS[e]} for e in R.ESTRATEGIAS],
-            "ejecucion_id": str(ej["ejecucion_id"]), "aviso": AVISO}
+            "meses_siguientes": _meses_siguientes(db, ej, ubigeo, periodo), "ejecucion_id": str(ej["ejecucion_id"]), "aviso": AVISO}
 
 
 @router.get("/ficha", response_model=FichaOut)

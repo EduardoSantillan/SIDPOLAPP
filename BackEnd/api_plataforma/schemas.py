@@ -165,6 +165,24 @@ class RangoOut(BaseModel):
     meses: int
 
 
+class EstimacionMesSinDatoOut(BaseModel):
+    estrategia: Estrategia
+    etiqueta: str
+    valor: int
+
+
+class MesSinDatoOut(BaseModel):
+    fecha: str
+    estimaciones: list[EstimacionMesSinDatoOut]
+
+
+class MesesSiguientesOut(BaseModel):
+    """Estimaciones de los meses siguientes al último con dato registrado: todavía no se pueden comparar y no entran a ninguna métrica.
+    Cada mes se apoya en los anteriores: el primero solo en datos registrados; los demás, además, en las estimaciones previas."""
+    datos_hasta: str
+    meses: list[MesSinDatoOut]
+
+
 class ResumenDistritoOut(BaseModel):
     ubigeo: str
     distrito: str
@@ -177,6 +195,7 @@ class ResumenDistritoOut(BaseModel):
     mase_explicacion: str
     meses_evaluados: int
     rango_habitual: RangoOut
+    meses_siguientes: MesesSiguientesOut | None = None
     ejecucion_id: str
     aviso: str
 
@@ -205,8 +224,16 @@ class SerieOut(BaseModel):
     cambio_registro: CambioRegistroOut
     puntos: list[PuntoSerieOut]
     estrategias: list[EtiquetaEstrategiaOut]
+    meses_siguientes: MesesSiguientesOut | None = None
     ejecucion_id: str
     aviso: str
+
+
+class EstimacionFechaOut(BaseModel):
+    fecha: str
+    estrategia: Estrategia
+    etiqueta: str
+    valor: int
 
 
 class FilaTablaOut(BaseModel):
@@ -214,6 +241,7 @@ class FilaTablaOut(BaseModel):
     distrito: str
     registradas_ultimo_mes: int | None = None
     error_promedio: list[ErrorEstrategiaOut]
+    estimaciones_siguientes: list[EstimacionFechaOut] = []
 
 
 class TablaOut(BaseModel):
@@ -221,6 +249,8 @@ class TablaOut(BaseModel):
     periodo: Periodo
     ultimo_mes: str
     mase_explicacion: str
+    meses_siguientes: list[str] = []
+    datos_hasta: str | None = None
     filas: list[FilaTablaOut]
     ejecucion_id: str
     aviso: str

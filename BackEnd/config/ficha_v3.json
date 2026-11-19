@@ -1,0 +1,35 @@
+{
+  "version": "ficha-3",
+  "secciones": [
+    {
+      "id": "que_muestra",
+      "titulo": "Qué muestra esta página",
+      "texto": "La cantidad de denuncias de robo y de hurto que se registraron cada mes en los 43 distritos de Lima Metropolitana, y lo que un modelo había estimado para ese mismo mes. Sirve para ver cómo se comportó la estimación en meses pasados. Además, estima los dos meses siguientes al último con dato registrado."
+    },
+    {
+      "id": "que_no_es",
+      "titulo": "Qué no muestra",
+      "texto": "No es la cantidad real de delitos: solo cuenta lo que se denunció y quedó registrado en el SIDPOL. Tampoco recomienda dónde actuar ni ordena los distritos de más a menos. Robo y hurto se muestran por separado y nunca se suman."
+    },
+    {
+      "id": "que_se_estima",
+      "titulo": "Qué se estima",
+      "texto": "Cada estimación es para un solo mes por delante. Para estimar julio se utilizaron únicamente datos disponibles hasta junio, y lo mismo se hizo con cada mes. Se comparan cuatro formas de hacerlo: un modelo por distrito, un modelo con todo Lima, repetir el mes anterior y repetir el mismo mes del año pasado. Las dos últimas son referencias sencillas para saber si un modelo aporta algo. Para agosto y setiembre de 2026 todavía no hay denuncias registradas en esta versión de datos, así que son estimaciones hechas con datos hasta julio. Agosto usa solo datos ya registrados; setiembre se apoya además en la estimación de agosto, por eso puede equivocarse más. Todavía no se pueden comparar con lo que ocurra y no entran en el cálculo del error ni del MASE: ese error mide estimaciones a un mes."
+    },
+    {
+      "id": "como_leer_el_error",
+      "titulo": "Cómo leer el error",
+      "texto": "El error en denuncias dice cuánto se equivocó la estimación, en promedio, cada mes. El MASE compara ese error con una escala histórica fija: el error típico de repetir el mismo mes del año pasado entre 2018 y 2022. Con 0,64, el error fue el 64 % de esa escala; con 1,00, fue igual; con más de 1,00, fue mayor. Como la escala es fija y viene de esos años, un valor menor que 1 no demuestra por sí solo que el modelo sea mejor que las referencias en el periodo evaluado: para compararlos hay que mirar también el MASE de las referencias. Los valores corresponden a meses ya ocurridos."
+    },
+    {
+      "id": "cambio_de_registro",
+      "titulo": "Cambio de noviembre de 2024",
+      "texto": "Desde noviembre de 2024 cambió la forma de registrar las denuncias. Por eso los gráficos marcan ese mes y los resultados se pueden ver por separado antes y después. La evaluación empezó en enero de 2023: elegir «Desde nov 2024» solo cambia el tramo que se muestra, no cuándo empezó."
+    },
+    {
+      "id": "detalle_tecnico",
+      "titulo": "Detalle técnico",
+      "texto": "Horizonte de un mes. Los modelos (XGBoost) se vuelven a entrenar cada mes con toda la historia anterior, de enero de 2023 a julio de 2026. Los meses sin denuncias registradas se tratan como cero. La escala del MASE es fija por distrito y se calcula con 2018–2022. La configuración usada, con su huella digital (SHA-256), aparece al final de esta ficha."
+    }
+  ]
+}

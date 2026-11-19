@@ -115,6 +115,40 @@ def metricas(db: Session, ej, periodo: str, ubigeos: list[str] | None = None, co
     return out
 
 
+def meses_sin_dato(db: Session, ej, ubigeo: str | None = None) -> dict | None:
+    """Estimaciones de los meses siguientes al último con dato registrado, que la ejecución hizo sin poder compararlas todavía.
+    {'datos_hasta': date, 'meses': [date, ...], 'estimaciones': {date: {ubigeo: {estrategia: estimado}}}} o None si la ejecución no los trae.
+    Nunca entran a las métricas ni a los meses evaluados."""
+    sql = ("SELECT r.ubigeo, r.fecha_origen, r.fecha_objetivo, r.estrategia, r.estimado FROM resultado_pronostico r "
+           "WHERE r.ejecucion_id = :e AND r.variante IN ('E1','base') AND r.observado IS NULL "
+           "AND NOT EXISTS (SELECT 1 FROM observacion_mensual o WHERE o.version_id = :v AND o.target = :t AND o.ubigeo = r.ubigeo AND o.fecha = r.fecha_objetivo)")
+    p = {"e": ej["ejecucion_id"], "v": ej["version_id"], "t": ej["target"]}
+    if ubigeo:
+        sql += " AND r.ubigeo = :u"
+        p["u"] = ubigeo
+    filas = db.execute(text(sql), p).all()
+    if not filas:
+        return None
+    est: dict = {}
+    for u, _, f, e, v in filas:
+        est.setdefault(f, {}).setdefault(u, {})[e] = float(v)
+    return {"datos_hasta": max(f[1] for f in filas), "meses": sorted(est), "estimaciones": est}
+
+
+def filas_sin_dato(db: Session, ej, periodo: str, ubigeo: str | None = None) -> list[dict]:
+    """Las estimaciones de los meses sin dato registrado, con la forma de `filas_mensuales` (observado vacío), para las exportaciones.
+    Esos meses son posteriores a nov 2024: no se incluyen al pedir solo «antes de nov 2024»."""
+    p = None if periodo == "antes_nov_2024" else meses_sin_dato(db, ej, ubigeo)
+    if not p:
+        return []
+    nombres = {d["ubigeo"]: d["nombre"] for d in distritos(db)}
+    filas = [{"ubigeo": u, "distrito": nombres[u], "fecha": f, "estrategia": e, "estimado": est[e], "observado": None, "regimen": "post_break"}
+             for f, por_distrito in p["estimaciones"].items() for u, est in por_distrito.items() for e in ESTRATEGIAS if e in est]
+    orden_d = {u: i for i, u in enumerate(nombres)}
+    filas.sort(key=lambda f: (orden_d[f["ubigeo"]], f["fecha"], ESTRATEGIAS.index(f["estrategia"])))
+    return filas
+
+
 def redondear(v, d: int):
     return None if v is None or v != v else round(float(v), d)  # v != v: NaN
 

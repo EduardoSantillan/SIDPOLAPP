@@ -312,3 +312,77 @@ def test_estrategia_desconocida_en_la_configuracion_no_se_omite_en_silencio(pane
     cfg = {**CFG_NAIVE, "estrategias": CFG_NAIVE["estrategias"] + [extra]}
     with pytest.raises(ejecutor.ErrorEjecucion, match="no sabe ejecutar"):
         ejecutor.calcular(panel_real["ROBO"], cfg, "ROBO")
+
+
+# ---------- meses sin dato registrado: estimación hacia adelante (agosto y setiembre de 2026) ----------
+def _con_estimacion(cfg: dict, meses: int = 2, ultimo: str | None = None) -> dict:
+    ev = {**cfg["evaluacion"], "meses_adelante": meses}
+    if ultimo:
+        ev["ultimo_mes_pronosticado"] = ultimo
+    return {**cfg, "evaluacion": ev}
+
+
+AGO, SEP = pd.Timestamp("2026-08-01"), pd.Timestamp("2026-09-01")
+
+
+def test_los_meses_sin_dato_se_estiman_pero_no_cambian_nada_de_lo_evaluado(panel_real):
+    base_p, base_m = ejecutor.calcular(panel_real["ROBO"], CFG_NAIVE, "ROBO")
+    pron, met = ejecutor.calcular(panel_real["ROBO"], _con_estimacion(CFG_NAIVE), "ROBO")
+    nuevo = pron[pron["fecha_objetivo"] >= AGO]
+    assert len(pron) == len(base_p) + 2 * 2 * 43 and len(nuevo) == 2 * 2 * 43   # 2 meses x 2 referencias x 43 distritos
+    assert nuevo["y_true"].isna().all() and nuevo["y_pred"].notna().all()
+    assert (nuevo["fecha_origen"] == pd.Timestamp("2026-07-01")).all()          # los dos, con datos hasta julio
+    pd.testing.assert_frame_equal(pron[pron["fecha_objetivo"] <= "2026-07-01"].reset_index(drop=True), base_p.reset_index(drop=True))
+    pd.testing.assert_frame_equal(met, base_m)                                  # las métricas no ven los meses sin dato
+
+
+def test_las_referencias_en_los_meses_sin_dato_repiten_lo_que_dicen_sus_nombres(panel_real):
+    p = panel_real["ROBO"]
+    pron, _ = ejecutor.calcular(p, _con_estimacion(CFG_NAIVE), "ROBO")
+
+    def mes(estrategia, m):
+        return pron[(pron["estrategia"] == estrategia) & (pron["fecha_objetivo"] == m)].set_index("ubigeo")["y_pred"].sort_index().to_numpy()
+
+    def real(m):
+        return p[p["fecha"] == m].set_index("ubigeo")["y"].sort_index().to_numpy()
+    jul = real(pd.Timestamp("2026-07-01"))
+    np.testing.assert_array_equal(mes("naive1", AGO), jul)       # repetir el mes anterior: agosto = julio
+    np.testing.assert_array_equal(mes("naive1", SEP), jul)       # y setiembre repite la estimación de agosto, que es julio
+    np.testing.assert_array_equal(mes("naive_estacional", AGO), real(pd.Timestamp("2025-08-01")))
+    np.testing.assert_array_equal(mes("naive_estacional", SEP), real(pd.Timestamp("2025-09-01")))
+
+
+def test_para_estimar_meses_sin_dato_la_version_debe_terminar_en_el_ultimo_mes_evaluado(panel_real):
+    with pytest.raises(ejecutor.ErrorEjecucion, match="debe terminar en el último mes evaluado"):
+        ejecutor.calcular(panel_real["ROBO"], _con_estimacion(CFG_NAIVE, 1, ultimo="2026-06"), "ROBO")
+
+
+@con_xgboost
+@pytest.mark.parametrize("fuente,ajustes", [("local_HL", 43), ("global_HL", 1)])
+def test_el_primer_mes_sin_dato_coincide_con_estimarlo_de_a_un_mes_y_el_segundo_se_encadena(panel_real, ctx_robo, fuente, ajustes):
+    p = panel_real["ROBO"]
+    vacio = pd.DataFrame({"ubigeo": sorted(p["ubigeo"].unique()), "fecha": AGO, "y": np.nan})
+    a_un_mes = motores.MOTORES[fuente](pd.concat([p, vacio], ignore_index=True), [AGO], ctx_robo)  # el método de siempre, con agosto vacío
+    fut = motores.FUTURO[fuente](p, [AGO, SEP], ctx_robo)
+    assert fut.attrs["ajustes"] == ajustes                                      # se entrena una sola vez, con datos hasta julio
+    ago, sep = fut[fut["fecha_objetivo"] == AGO], fut[fut["fecha_objetivo"] == SEP]
+    np.testing.assert_array_equal(ago.sort_values("ubigeo")["y_pred"], a_un_mes.sort_values("ubigeo")["y_pred"])
+    assert len(sep) == 43 and sep["y_pred"].notna().all() and (sep["y_pred"] >= 0).all()
+    assert not np.array_equal(ago.sort_values("ubigeo")["y_pred"], sep.sort_values("ubigeo")["y_pred"])
+
+
+@con_xgboost
+def test_setiembre_depende_de_la_estimacion_de_agosto_y_no_ve_nada_posterior_a_julio(panel_real, ctx_robo):
+    p = panel_real["ROBO"]
+    sep = motores.FUTURO["global_HL"](p, [AGO, SEP], ctx_robo)
+    alterado = p.copy()
+    alterado.loc[alterado["fecha"] == "2026-07-01", "y"] += 300   # cambiar julio mueve agosto y, encadenado, también setiembre
+    sep2 = motores.FUTURO["global_HL"](alterado, [AGO, SEP], ctx_robo)
+    assert not np.array_equal(sep["y_pred"], sep2["y_pred"])
+
+
+def test_la_configuracion_con_estimacion_solo_agrega_los_meses_sin_dato():
+    import json
+    nueva = json.loads((RUTA.parent / "experimento_v2.json").read_text(encoding="utf-8"))
+    assert {k for k in nueva if nueva[k] != CFG.get(k)} == {"evaluacion", "version"}
+    assert nueva["evaluacion"] == {**CFG["evaluacion"], "meses_adelante": 2}

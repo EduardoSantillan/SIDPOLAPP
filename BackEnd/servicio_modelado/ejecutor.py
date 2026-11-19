@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from common.db import sesion
 from servicio_modelado import metricas
 from servicio_modelado.errores import ErrorEjecucion
-from servicio_modelado.motores import MOTORES, VARIABLES_NIVEL, Contexto
+from servicio_modelado.motores import FUTURO, MOTORES, VARIABLES_NIVEL, Contexto
 
 log = logging.getLogger("sidpol")
 MOTIVO_REINICIO = "El servicio se reinició durante la ejecución. Vuelve a iniciarla."
@@ -60,6 +60,13 @@ def calcular(panel: pd.DataFrame, cfg: dict, target: str) -> tuple[pd.DataFrame,
         raise ErrorEjecucion(f"La versión llega hasta {ultimo:%Y-%m} y la configuración evalúa hasta {meses[-1]:%Y-%m}.")
     distritos = panel["ubigeo"].nunique()
     esperados = len(meses) * distritos
+    # Meses sin dato registrado (el modelo sigue siendo de un mes por delante): se estiman al final, con los datos hasta el último mes
+    # con dato. El primero usa solo datos reales; cada siguiente toma la estimación del anterior como si fuera el dato (encadenado).
+    # No entran a ninguna métrica: todavía no hay con qué compararlos.
+    adelante = int(ev.get("meses_adelante", 0))
+    futuros = [ultimo + pd.DateOffset(months=k) for k in range(1, adelante + 1)]
+    if futuros and ultimo != meses[-1]:
+        raise ErrorEjecucion(f"Para estimar meses sin dato, la versión debe terminar en el último mes evaluado ({meses[-1]:%Y-%m}) y llega hasta {ultimo:%Y-%m}.")
     cong = cfg.get("congelada", {})
     ctx = Contexto(target=target, seleccion=cong.get("selected", {}).get(target, {}), parametros=cong.get("level_params", {}),
                    variables=["ubigeo" if v == "UBIGEO" else v for v in cong.get("level_features", VARIABLES_NIVEL)])
@@ -84,15 +91,28 @@ def calcular(panel: pd.DataFrame, cfg: dict, target: str) -> tuple[pd.DataFrame,
         entrenados = {"local": esperados, "global": len(meses)}.get(est["estrategia"], 0) if est.get("entrena") else 0
         if ajustes != entrenados:
             raise ErrorEjecucion(f"«{est['fuente']}» entrenó {ajustes} modelos y debían ser {entrenados}.")
+        p["fecha_origen"] = p["fecha_objetivo"] - pd.DateOffset(months=cfg["horizonte_meses"])
         partes.append(p)
+        if futuros:
+            f = FUTURO[est["fuente"]](panel, futuros, ctx)
+            aj_f = f.attrs.get("ajustes")
+            f["estrategia"], f["variante"], f["y_true"] = est["estrategia"], est["variante"], np.nan
+            f["fecha_origen"] = ultimo  # los datos que vio: hasta el último mes con dato, también para el segundo mes en adelante
+            if len(f) != len(futuros) * distritos or f.duplicated(["ubigeo", "fecha_objetivo"]).any():
+                raise ErrorEjecucion(f"Las estimaciones de «{est['fuente']}» para los meses sin dato no tienen exactamente {len(futuros) * distritos} filas.")
+            if not (f["y_pred"].notna().all() and np.isfinite(f["y_pred"]).all() and (f["y_pred"] >= 0).all()):
+                raise ErrorEjecucion(f"Hay estimaciones no válidas en «{est['fuente']}» para los meses sin dato.")
+            entrenados_f = {"local": distritos, "global": 1}.get(est["estrategia"], 0) if est.get("entrena") else 0  # un solo entrenamiento, con los datos hasta el último mes
+            if aj_f != entrenados_f:
+                raise ErrorEjecucion(f"«{est['fuente']}» entrenó {aj_f} modelos para los meses sin dato y debían ser {entrenados_f}.")
+            partes.append(f)
     if not partes:
         raise ErrorEjecucion("La configuración no tiene estrategias que la plataforma sepa ejecutar.")
     pron = pd.concat(partes, ignore_index=True)
-    pron["fecha_origen"] = pron["fecha_objetivo"] - pd.DateOffset(months=cfg["horizonte_meses"])
 
     esc = cfg["escala_mase"]
     q = metricas.constantes_q(panel, esc["ventana_inicio"], esc["ventana_fin"], esc["estacionalidad_meses"])
-    met = metricas.resumir(pron, q, pd.Timestamp(cfg["regimen_corte"]))
+    met = metricas.resumir(pron[pron["fecha_objetivo"] <= meses[-1]], q, pd.Timestamp(cfg["regimen_corte"]))  # el mes sin dato no entra a las métricas
     return pron, met
 
 
@@ -121,7 +141,7 @@ def _persistir(db: Session, e, pron: pd.DataFrame, met: pd.DataFrame) -> None:
         text("INSERT INTO resultado_pronostico(ejecucion_id, ubigeo, estrategia, variante, fecha_origen, fecha_objetivo, estimado, observado) "
              "VALUES (:e,:u,:s,:v,:fo,:ft,:p,:o)"),
         [{"e": eid, "u": r.ubigeo, "s": r.estrategia, "v": r.variante, "fo": r.fecha_origen.date(), "ft": r.fecha_objetivo.date(),
-          "p": float(r.y_pred), "o": int(r.y_true)} for r in pron.itertuples(index=False)])
+          "p": float(r.y_pred), "o": None if pd.isna(r.y_true) else int(r.y_true)} for r in pron.itertuples(index=False)])
     db.execute(
         text("INSERT INTO metrica_desempeno(ejecucion_id, ubigeo, estrategia, variante, periodo, metrica, valor, motivo_nulo) "
              "VALUES (:e,:u,:s,:v,:p,:m,:x,:n)"),

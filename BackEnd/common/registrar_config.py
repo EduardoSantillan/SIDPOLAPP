@@ -2,6 +2,7 @@
 
 Uso:  python -m common.registrar_config            → la registra SIN aprobar (la API se niega a ejecutarla)
       python -m common.registrar_config --aprobar  → la deja aprobada con la fecha de hoy
+      python -m common.registrar_config --config experimento_v2.json --ficha ficha_v3.json  → otra configuración (sin aprobar)
 La aprobación es una decisión del equipo y del asesor; la plataforma no edita el contenido (ADR-05).
 """
 import hashlib
@@ -45,4 +46,7 @@ def main(aprobar: bool, ruta: Path = RUTA, ruta_ficha: Path | None = RUTA_FICHA)
 
 
 if __name__ == "__main__":
-    print(main("--aprobar" in sys.argv))
+    # --config y --ficha eligen otros archivos de la carpeta config/ (por defecto, la v0.8.5 con la ficha-2)
+    def opcion(nombre: str, defecto: Path) -> Path:
+        return defecto.parent / sys.argv[sys.argv.index(nombre) + 1] if nombre in sys.argv else defecto
+    print(main("--aprobar" in sys.argv, opcion("--config", RUTA), opcion("--ficha", RUTA_FICHA)))
