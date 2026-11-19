@@ -1,9 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { Cargando, ErrorCaja, SelectorDelito, Titulo } from "../components/Pieza";
+import { Aviso, Cargando, ErrorCaja, SelectorDelito, Titulo } from "../components/Pieza";
 import { api } from "../lib/api";
-import { sinTildes } from "../lib/formato";
+import { AVISO_BASE, sinTildes } from "../lib/formato";
 import type { Delito, Distrito } from "../lib/tipos";
 
 export function usarDistritos() {
@@ -26,6 +26,8 @@ export function Inicio() {
       <Titulo texto="Inicio" />
       <h1>¿De qué distrito quieres saber?</h1>
       <p className="lead">Mira cuántas denuncias se registraron y qué tanto se parecen a lo que estimaban los modelos.</p>
+      <p className="note" style={{ marginBottom: 10 }}>Primero, ¿qué tipo de denuncia?</p>
+      <SelectorDelito valor={delito} alCambiar={(d) => setParams({ delito: d })} />
       {error ? <ErrorCaja error={error} reintentar={() => refetch()} /> : isPending ? <Cargando /> : (
         <div className="pick">
           <input type="text" aria-label="Distrito" autoFocus autoComplete="off" placeholder="Escribe el nombre del distrito, por ejemplo Surco"
@@ -39,9 +41,8 @@ export function Inicio() {
           {texto.trim() && coincidencias.length === 0 && <p className="note" role="status">No encontramos ese distrito. Revisa cómo está escrito.</p>}
         </div>
       )}
-      <p className="note" style={{ marginBottom: 10 }}>¿Qué quieres ver?</p>
-      <SelectorDelito valor={delito} alCambiar={(d) => setParams({ delito: d })} />
       <p style={{ marginTop: 22 }}><Link to={`/distritos?delito=${delito}`}>Prefiero ver todos los distritos juntos</Link></p>
+      <div style={{ maxWidth: 560, margin: "28px auto 0", textAlign: "left" }}><Aviso texto={AVISO_BASE} /></div>
     </section>
   );
 }

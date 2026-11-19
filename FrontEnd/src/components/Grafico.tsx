@@ -1,8 +1,8 @@
-import { useMemo, useState } from "react";
-import { mesCorto, mesTexto, num } from "../lib/formato";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { denuncias, mayuscula, mesCorto, mesTexto, num } from "../lib/formato";
 import type { Serie } from "../lib/tipos";
 
-const W = 860, H = 300, L = 46, R = 50, T = 14, B = 34;
+const W = 860, H = 340, L = 46, R = 50, T = 14, B = 34;
 /** Un paso «redondo» (1, 2, 5, 10, 20, 50…) para que el eje diga 0, 100, 200, 300, 400 y no 0, 99, 199. */
 function pasoBonito(max: number): number {
   const crudo = max / 4, pot = 10 ** Math.floor(Math.log10(crudo)), f = crudo / pot;
@@ -29,6 +29,9 @@ export function Grafico({ serie, distrito }: { serie: Serie; distrito: string })
   const [elegido, setElegido] = useState<string | null>(null);
   const enSerie = elegido ? p.findIndex((x) => x.fecha === elegido) : -1;
   const i = enSerie >= 0 ? enSerie : ultimoReal;
+  const caja = useRef<HTMLDivElement>(null);
+  // En el teléfono el gráfico se desliza de lado: se empieza viendo lo más reciente.
+  useEffect(() => { if (caja.current) caja.current.scrollLeft = caja.current.scrollWidth; }, [serie.puntos.length]);
   const fijar = (k: number | null) => setElegido(k == null ? null : p[Math.max(0, Math.min(p.length - 1, k))]?.fecha ?? null);
 
   const g = useMemo(() => {
@@ -71,9 +74,10 @@ export function Grafico({ serie, distrito }: { serie: Serie; distrito: string })
   return (
     <>
       <div className="chartwrap">
+        <div className="chartscroll" ref={caja}>
         <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" tabIndex={0}
              aria-label={`Denuncias registradas por mes en ${distrito} y lo que estimaba cada modelo. Usa las flechas para recorrer los meses.`}
-             onMouseMove={(e) => mover(e.clientX, e.currentTarget)} onMouseLeave={() => fijar(null)} onKeyDown={tecla}>
+             onPointerMove={(e) => mover(e.clientX, e.currentTarget)} onPointerDown={(e) => mover(e.clientX, e.currentTarget)} onPointerLeave={() => fijar(null)} onKeyDown={tecla}>
           {g.quiebre >= 0 && (
             <>
               <rect x={g.X(g.quiebre)} y={T} width={g.X(p.length - 1) - g.X(g.quiebre)} height={H - T - B} fill="var(--regime)" />
@@ -81,7 +85,7 @@ export function Grafico({ serie, distrito }: { serie: Serie; distrito: string })
             </>
           )}
           {ms && ms.meses.length > 0 && (
-            <rect x={g.X(ultimoReal)} y={T} width={g.X(p.length - 1) - g.X(ultimoReal) + 36} height={H - T - B} fill="var(--in)" opacity="0.09" />
+            <rect className="banda-est" x={g.X(ultimoReal)} y={T} width={g.X(p.length - 1) - g.X(ultimoReal) + 36} height={H - T - B} />
           )}
           {[0, 1, 2, 3, 4].map((k) => {
             const v = (g.max * k) / 4;
@@ -92,10 +96,27 @@ export function Grafico({ serie, distrito }: { serie: Serie; distrito: string })
           <path d={g.trazo((k) => p[k].estimaciones.local)} fill="none" stroke="var(--in)" strokeWidth="2.2" strokeDasharray="6 4" />
           <path d={g.trazo((k) => p[k].registradas)} fill="none" stroke="var(--ink)" strokeWidth="2.6" />
           <line x1={g.X(i)} x2={g.X(i)} y1={T} y2={H - B} stroke="var(--ink3)" strokeDasharray="3 3" />
-          {act.registradas != null && <circle cx={g.X(i)} cy={g.Y(act.registradas)} r="4" fill="var(--ink)" />}
+          {act.registradas != null && <circle cx={g.X(i)} cy={g.Y(act.registradas)} r="5" fill="var(--ink)" />}
+          {(["global", "local"] as const).map((e) => act.estimaciones[e] != null && (
+            <circle key={`sel-${e}`} cx={g.X(i)} cy={g.Y(act.estimaciones[e])} r="4" fill={e === "local" ? "var(--in)" : "var(--wa)"} stroke="var(--surface)" strokeWidth="1.5" />
+          ))}
+          {(() => {  // el mes que se está mirando, bien grande y pegado a la línea, para no tener que bajar la vista
+            const texto = mayuscula(mesTexto(act.fecha)), ancho = texto.length * 8.6 + 22, cabe = g.X(i) + 8 + ancho <= W - 4;
+            const x = cabe ? g.X(i) + 8 : g.X(i) - 8 - ancho;
+            return (
+              <g pointerEvents="none" aria-hidden="true">
+                <rect x={x} y={T + 2} width={ancho} height={28} rx="6" fill="var(--surface)" stroke="var(--ink3)" />
+                <text x={x + ancho / 2} y={T + 21} textAnchor="middle" style={{ fontSize: 15, fontWeight: 700, fill: "var(--ink)" }}>{texto}</text>
+              </g>
+            );
+          })()}
           {ms && ms.meses.length > 0 && (
             <>
-              <text x={g.X(p.length - 1) + 34} y={H - B - 8} textAnchor="end">Estimación</text>
+              {(() => {  // el rótulo va arriba, salvo que los círculos queden ahí: entonces va abajo
+                const ys = p.slice(ultimoReal + 1).flatMap((pt) => (["local", "global"] as const).map((e) => pt.estimaciones[e]).filter((v) => v != null).map((v) => g.Y(v)));
+                const arriba = Math.min(...ys) > T + 34;
+                return <text x={g.X(p.length - 1) + 34} y={arriba ? T + 14 : H - B - 8} textAnchor="end">Estimación</text>;
+              })()}
               {p.slice(ultimoReal + 1).flatMap((pt, j) => (["global", "local"] as const).map((e) => pt.estimaciones[e] != null && (
                 <circle key={`${j}-${e}`} cx={g.X(ultimoReal + 1 + j)} cy={g.Y(pt.estimaciones[e])} r="4.5" fill="none" stroke={e === "local" ? "var(--in)" : "var(--wa)"} strokeWidth="2.2" />
               )))}
@@ -109,18 +130,20 @@ export function Grafico({ serie, distrito }: { serie: Serie; distrito: string })
             </>
           )}
         </svg>
+        </div>
+        <p className="note solo-movil">Desliza el gráfico hacia los lados para ver otros meses.</p>
         <div className="readout" aria-live="polite">
           {act.registradas != null ? (
             <>
-              <b>{mesTexto(act.fecha)}</b>: se registraron <b>{num(act.registradas)}</b> denuncias
+              <b>{mesTexto(act.fecha)}</b>: se registraron <b>{denuncias(act.registradas)}</b>
               {act.estimaciones.local != null && (
-                <> · {ETQ.local}: <b>{num(act.estimaciones.local)}</b> · {ETQ.global}: <b>{num(act.estimaciones.global ?? 0)}</b></>
+                <>; el modelo por distrito estimaba <b>{denuncias(act.estimaciones.local)}</b> y el modelo con todo Lima, <b>{denuncias(act.estimaciones.global ?? 0)}</b>.</>
               )}
             </>
           ) : (
             <>
-              <b>{mesTexto(act.fecha)}</b>: todavía no hay denuncias registradas. Estimación con datos hasta {mesTexto(ms?.datos_hasta ?? act.fecha)}
-              {" "}· {ETQ.local}: <b>{num(act.estimaciones.local ?? 0)}</b> · {ETQ.global}: <b>{num(act.estimaciones.global ?? 0)}</b>
+              <b>{mesTexto(act.fecha)}</b>: todavía no hay denuncias registradas. Estimación con datos hasta {mesTexto(ms?.datos_hasta ?? act.fecha)}:
+              {" "}el modelo por distrito, <b>{denuncias(act.estimaciones.local ?? 0)}</b>; el modelo con todo Lima, <b>{denuncias(act.estimaciones.global ?? 0)}</b>.
             </>
           )}
         </div>
@@ -129,6 +152,7 @@ export function Grafico({ serie, distrito }: { serie: Serie; distrito: string })
         <span><i style={{ borderColor: "var(--ink)" }} />Denuncias registradas</span>
         <span><i style={{ borderColor: "var(--in)", borderTopStyle: "dashed" }} />{ETQ.local} (lo que estimaba)</span>
         <span><i style={{ borderColor: "var(--wa)", borderTopStyle: "dotted" }} />{ETQ.global} (lo que estimaba)</span>
+        {ms && ms.meses.length > 0 && <span><span className="circ" aria-hidden="true" />Estimación de los meses sin denuncias registradas</span>}
       </div>
       <details>
         <summary>Ver los números mes a mes</summary>

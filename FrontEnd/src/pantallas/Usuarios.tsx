@@ -16,6 +16,7 @@ export function Usuarios() {
   const [form, setForm] = useState({ nombre: "", correo: "", rol: "usuario" as Rol });
   const [enlace, setEnlace] = useState<Enlace | null>(null);
   const [copiado, setCopiado] = useState(false);
+  const [pendiente, setPendiente] = useState<{ id: string; datos: { rol?: Rol; activo?: boolean }; texto: string } | null>(null);
   const lista = useQuery({ queryKey: ["usuarios"], queryFn: () => api.get<{ items: Usuario[] }>("/usuarios", { limite: 200 }) });
   const refrescar = () => cache.invalidateQueries({ queryKey: ["usuarios"] });
 
@@ -28,6 +29,7 @@ export function Usuarios() {
     mutationFn: (u: Usuario) => api.post<{ enlace_activacion: string; vence: string }>(`/usuarios/${u.id}/reenviar-activacion`).then((r) => ({ ...r, nombre: u.nombre })),
     onSuccess: (r) => { setEnlace(r); setCopiado(false); },
   });
+  const esYo = (u: Usuario) => u.rol === "administrador" && u.nombre === yo.usuario?.nombre; // no puede quitarse su propio acceso
   const copiar = async () => { await navigator.clipboard?.writeText(enlace!.enlace_activacion); setCopiado(true); };
 
   return (
@@ -63,6 +65,15 @@ export function Usuarios() {
 
       <div className="card tabla-scroll">
         <h2>Cuentas</h2>
+        {pendiente && (
+          <Alerta tipo="warn">
+            {pendiente.texto}
+            <div className="row" style={{ marginTop: 8 }}>
+              <button className="primary" onClick={() => { cambiar.mutate({ id: pendiente.id, datos: pendiente.datos }); setPendiente(null); }}>Confirmar</button>
+              <button onClick={() => setPendiente(null)}>Cancelar</button>
+            </div>
+          </Alerta>
+        )}
         {lista.isPending ? <Cargando /> : lista.error ? <ErrorCaja error={lista.error} reintentar={() => lista.refetch()} /> : (
           <table>
             <thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Estado</th><th><span className="sr">Acciones</span></th></tr></thead>
@@ -71,14 +82,14 @@ export function Usuarios() {
                 <tr key={u.id}>
                   <td>{u.nombre}</td><td>{u.correo}</td>
                   <td>
-                    <select aria-label={`Rol de ${u.nombre}`} value={u.rol} disabled={u.estado === "inactivo" || cambiar.isPending}
-                            onChange={(e) => cambiar.mutate({ id: u.id, datos: { rol: e.target.value as Rol } })}>
+                    <select aria-label={`Rol de ${u.nombre}`} value={u.rol} disabled={u.estado === "inactivo" || cambiar.isPending || esYo(u)} title={esYo(u) ? "No puedes cambiar tu propio rol" : undefined}
+                            onChange={(e) => setPendiente({ id: u.id, datos: { rol: e.target.value as Rol }, texto: `¿Cambiar a ${u.nombre} a «${NOMBRE_ROL[e.target.value as Rol]}»? Cambia lo que puede hacer en la plataforma.` })}>
                       {ROLES.map((r) => <option key={r} value={r}>{NOMBRE_ROL[r]}</option>)}
                     </select>
                   </td>
                   <td>{u.estado === "activo" ? <Etiqueta tipo="ok">Activo</Etiqueta> : u.estado === "inactivo" ? <Etiqueta tipo="err">Desactivado</Etiqueta> : <Etiqueta tipo="warn">Falta activar</Etiqueta>}</td>
                   <td>
-                    {u.estado === "activo" && <button onClick={() => cambiar.mutate({ id: u.id, datos: { activo: false } })} disabled={u.nombre === yo.usuario?.nombre && u.rol === "administrador"}>Desactivar</button>}
+                    {u.estado === "activo" && <button onClick={() => setPendiente({ id: u.id, datos: { activo: false }, texto: `¿Desactivar la cuenta de ${u.nombre}? No podrá entrar. Podrás reactivarla cuando quieras.` })} disabled={esYo(u)} title={esYo(u) ? "No puedes desactivar tu propia cuenta" : undefined}>Desactivar</button>}
                     {u.estado === "inactivo" && <button onClick={() => cambiar.mutate({ id: u.id, datos: { activo: true } })}>Reactivar</button>}
                     {u.estado === "pendiente_activacion" && <button onClick={() => reenviar.mutate(u)}>Nuevo enlace</button>}
                   </td>

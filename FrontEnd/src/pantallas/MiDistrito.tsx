@@ -4,7 +4,8 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { Grafico } from "../components/Grafico";
 import { Alerta, Aviso, Cargando, ErrorCaja, Falla, SelectorDelito, Titulo } from "../components/Pieza";
 import { api } from "../lib/api";
-import { PERIODOS, comparado, delitoTexto, mayuscula, mesTexto, num, restarMeses } from "../lib/formato";
+import { PERIODOS, comparado, delitoTexto, denuncias, mayuscula, mesTexto, num, restarMeses } from "../lib/formato";
+import { usarDistritos } from "./Inicio";
 import type { Delito, Periodo, Resumen, Serie } from "../lib/tipos";
 
 const ESTILO_ESTIMACION: Record<string, string> = { local: "est", global: "est b" };
@@ -19,22 +20,24 @@ export function MiDistrito() {
 
   const resumen = useQuery({ queryKey: ["resumen", ubigeo, delito], queryFn: () => api.get<Resumen>(`/distritos/${ubigeo}/resumen`, { target: delito }) });
   const serie = useQuery({ queryKey: ["serie", ubigeo, delito, periodo], queryFn: () => api.get<Serie>(`/distritos/${ubigeo}/serie`, { target: delito, periodo }) });
+  const nombreCache = usarDistritos().data?.find((d) => d.ubigeo === ubigeo)?.nombre; // para no dejar el título en «…» mientras carga
   const r = resumen.data;
   // La evaluación empezó con el primer mes que tiene resultado; el filtro de periodo solo cambia el tramo que se muestra.
   const inicio = r ? restarMeses(r.ultimo_mes, r.meses_evaluados - 1) : "";
 
   return (
     <>
-      <Titulo texto={r?.distrito ?? "Distrito"} />
+      <Titulo texto={r?.distrito ?? nombreCache ?? "Distrito"} />
       <p className="note"><Link to={`/?delito=${delito}`}>← Elegir otro distrito</Link></p>
       <div className="row" style={{ justifyContent: "space-between" }}>
-        <h1>{r?.distrito ?? "…"}</h1>
+        <h1>{r?.distrito ?? nombreCache ?? "…"}</h1>
         <SelectorDelito valor={delito} alCambiar={(d) => cambiar({ delito: d })} />
       </div>
 
       {resumen.isPending ? <Cargando /> : resumen.error ? <Falla error={resumen.error} delito={delito} reintentar={() => resumen.refetch()} /> : r && (
         <>
           <Respuesta r={r} delito={delito} />
+          <Aviso texto={r.aviso} />
           {r.meses_siguientes && <MesesSiguientes r={r} delito={delito} />}
           <div className="card">
             <div className="row" style={{ justifyContent: "space-between", marginBottom: 10 }}>
@@ -62,7 +65,7 @@ export function MiDistrito() {
               </>
             )}
           </div>
-          <Aviso texto={r.aviso} />
+          <DetalleError r={r} />
           <Acciones ubigeo={ubigeo} delito={delito} periodo={periodo} />
         </>
       )}
@@ -74,9 +77,10 @@ function Respuesta({ r, delito }: { r: Resumen; delito: Delito }) {
   const err = Object.fromEntries(r.error_promedio.map((e) => [e.estrategia, e]));
   const local = err.local, global = err.global;
   const sinMase = local?.mase == null && global?.mase == null;
+  const n = r.registradas_ultimo_mes;
   return (
     <div className="card">
-      <p className="answer">En {r.distrito} se registraron <b>{num(r.registradas_ultimo_mes)} denuncias de {delitoTexto(delito)}</b> en {mesTexto(r.ultimo_mes)}.</p>
+      <p className="answer">En {r.distrito} {n === 1 ? "se registró" : "se registraron"} <b>{denuncias(n)} de {delitoTexto(delito)}</b> en {mesTexto(r.ultimo_mes)}.</p>
       <p className="note" style={{ margin: "-6px 0 12px" }}>Para ese mes, los modelos habían estimado:</p>
       <div className="grid2">
         {r.estimaciones_ultimo_mes.filter((e) => e.estrategia === "local" || e.estrategia === "global").map((e) => (
@@ -93,16 +97,28 @@ function Respuesta({ r, delito }: { r: Resumen; delito: Delito }) {
         </p>
       )}
       {sinMase && <Alerta tipo="warn">Este distrito registra muy pocas denuncias al mes, así que el MASE no se puede calcular. El error en denuncias sí es válido.</Alerta>}
-      <table style={{ marginTop: 12 }}>
-        <thead><tr><th>Forma de estimar</th><th className="n">Error promedio (denuncias al mes)</th><th className="n">MASE (menos es mejor)</th></tr></thead>
+    </div>
+  );
+}
+
+/** El detalle de cada forma de estimar (error y MASE). Va después de lo que la persona vino a ver: el gráfico. */
+function DetalleError({ r }: { r: Resumen }) {
+  const fila = (e: Resumen["error_promedio"][number]) => (
+    <tr key={e.estrategia}>
+      <td>{e.etiqueta}</td>
+      <td className="n">{e.denuncias_por_mes != null ? num(e.denuncias_por_mes, 1) : "—"}</td>
+      <td className="n">{e.mase != null ? num(e.mase, 2) : "—"}</td>
+    </tr>
+  );
+  return (
+    <div className="card">
+      <h2>Qué tan cerca estuvo cada forma de estimar</h2>
+      <table>
+        <thead><tr><th>Forma de estimar</th><th className="n">Error promedio (denuncias al mes)</th><th className="n">MASE (menos = error más chico)</th></tr></thead>
         <tbody>
-          {r.error_promedio.map((e) => (
-            <tr key={e.estrategia} style={e.estrategia.startsWith("naive") ? { color: "var(--ink2)" } : undefined}>
-              <td>{e.etiqueta}{e.estrategia.startsWith("naive") && <span className="note"> · regla simple para comparar</span>}</td>
-              <td className="n">{e.denuncias_por_mes != null ? num(e.denuncias_por_mes, 1) : "—"}</td>
-              <td className="n">{e.mase != null ? num(e.mase, 2) : "—"}</td>
-            </tr>
-          ))}
+          {r.error_promedio.filter((e) => !e.estrategia.startsWith("naive")).map(fila)}
+          <tr><th colSpan={3} style={{ fontSize: 12, fontWeight: 600, color: "var(--ink2)", background: "var(--surface)" }}>Reglas sencillas para comparar</th></tr>
+          {r.error_promedio.filter((e) => e.estrategia.startsWith("naive")).map(fila)}
         </tbody>
       </table>
       <p className="note" style={{ margin: "8px 0 0" }}>{r.mase_explicacion}</p>
@@ -122,8 +138,8 @@ function MesesSiguientes({ r, delito }: { r: Resumen; delito: Delito }) {
       <p className="answer">Para {lista}, los modelos estiman <b>denuncias de {delitoTexto(delito)}</b>:</p>
       <div className="grid2">
         {modelos.map(({ e, etiqueta }) => (
-          <div key={e} className={ESTILO_ESTIMACION[e]}>
-            <div className="t">{etiqueta}</div>
+          <div key={e} className={`${ESTILO_ESTIMACION[e]} futuro`}>
+            <div className="t">{etiqueta}<span className="etq">estimación</span></div>
             <div className="meses">
               {ms.meses.map((m, i) => {
                 const v = m.estimaciones.find((x) => x.estrategia === e)?.valor;
@@ -144,9 +160,10 @@ function MesesSiguientes({ r, delito }: { r: Resumen; delito: Delito }) {
 function Acciones({ ubigeo, delito, periodo }: { ubigeo: string; delito: Delito; periodo: Periodo }) {
   const [estado, setEstado] = useState<"csv" | "pdf" | null>(null);
   const [error, setError] = useState<unknown>(null);
+  const [hecho, setHecho] = useState<"csv" | "pdf" | null>(null);
   const bajar = async (formato: "csv" | "pdf") => {
-    setEstado(formato); setError(null);
-    try { await api.descargar("/exportaciones", { formato, target: delito, ubigeo, periodo }); } catch (e) { setError(e); } finally { setEstado(null); }
+    setEstado(formato); setError(null); setHecho(null);
+    try { await api.descargar("/exportaciones", { formato, target: delito, ubigeo, periodo }); setHecho(formato); } catch (e) { setError(e); } finally { setEstado(null); }
   };
   return (
     <>
@@ -156,6 +173,7 @@ function Acciones({ ubigeo, delito, periodo }: { ubigeo: string; delito: Delito;
         <Link className="btn" to="/ficha">Cómo se calculó</Link>
       </div>
       {error != null && <ErrorCaja error={error} />}
+      {hecho && <Alerta tipo="ok">Listo: se descargó el {hecho === "pdf" ? "PDF" : "CSV"}. Incluye el aviso de alcance.</Alerta>}
     </>
   );
 }

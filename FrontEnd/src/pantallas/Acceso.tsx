@@ -21,7 +21,8 @@ export function Login() {
       <form className="login card" onSubmit={enviar}>
         <div className="brand" style={{ marginBottom: 6 }}>Denuncias por distrito</div>
         <h1 style={{ fontSize: 24 }}>Iniciar sesión</h1>
-        <p className="note">Solo entran personas con una cuenta creada por el administrador. Si olvidaste tu clave, pídele ayuda a él.</p>
+        <p className="lead" style={{ fontSize: 15, marginBottom: 8 }}>Consulta cuántas denuncias de robo y hurto se registraron en cada distrito de Lima.</p>
+        <p className="note">Solo entran personas con una cuenta creada por el administrador. Si olvidaste tu clave, pídesela a quien administra tu cuenta.</p>
         {aviso && <Alerta tipo="warn">{aviso}</Alerta>}
         <label className="f"><span>Correo</span>
           <input type="email" autoComplete="username" required value={correo} onChange={(e) => setCorreo(e.target.value)} placeholder="nombre@dominio.pe" />
@@ -44,7 +45,8 @@ export function Activar() {
   const [repetida, setRepetida] = useState("");
   const m = useMutation({ mutationFn: () => api.post("/auth/activar", { token, contrasena: clave }, { sinSesion: true }) });
   const corta = clave.length > 0 && clave.length < 10;
-  const distinta = repetida.length > 0 && repetida !== clave;
+  const noCoinciden = repetida.length > 0 && repetida !== clave;
+  const distinta = noCoinciden && repetida.length >= clave.length; // el aviso aparece cuando ya escribió lo mismo que la primera, no letra por letra
 
   return (
     <main>
@@ -60,7 +62,7 @@ export function Activar() {
         ) : !token ? (
           <Alerta tipo="err">Este enlace está incompleto. Pídele uno nuevo al administrador.</Alerta>
         ) : (
-          <form onSubmit={(e) => { e.preventDefault(); if (!corta && !distinta) m.mutate(); }}>
+          <form onSubmit={(e) => { e.preventDefault(); if (!corta && !noCoinciden) m.mutate(); }}>
             <p className="note">Usa al menos 10 caracteres. Puede ser una frase fácil de recordar.</p>
             <label className="f"><span>Contraseña nueva</span>
               <input type="password" autoComplete="new-password" required value={clave} onChange={(e) => setClave(e.target.value)} aria-invalid={corta} />

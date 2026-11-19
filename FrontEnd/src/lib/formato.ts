@@ -31,8 +31,14 @@ export function restarMeses(iso: string, n: number): string {
   return `${Math.floor(total / 12)}-${String((total % 12) + 1).padStart(2, "0")}-01`;
 }
 
-/** "13 menos que lo registrado", "coincide al redondear", etc. Los valores ya vienen redondeados: no se dice «igual» para no sugerir un acierto exacto. */
+/** Aviso de alcance para las pantallas que aún no tienen la respuesta de la API (inicio, errores, sin resultados). Es la primera frase del aviso de la API. */
+export const AVISO_BASE = "Cifras de denuncias registradas en SIDPOL: no equivalen a la criminalidad real ni son una recomendación operativa.";
+
+/** «1 denuncia», «12 denuncias»: un número siempre con su unidad. */
+export const denuncias = (n: number) => `${num(n)} ${n === 1 ? "denuncia" : "denuncias"}`;
+
+/** "13 denuncias menos que lo registrado", "coincide al redondear", etc. Los valores ya vienen redondeados: no se dice «igual» para no sugerir un acierto exacto. */
 export function comparado(diferencia: number): string {
   if (diferencia === 0) return "coincide al redondear";
-  return `${num(Math.abs(diferencia))} ${diferencia < 0 ? "menos" : "más"} que lo registrado`;
+  return `${denuncias(Math.abs(diferencia))} ${diferencia < 0 ? "menos" : "más"} que lo registrado`;
 }

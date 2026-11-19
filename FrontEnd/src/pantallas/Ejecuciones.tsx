@@ -20,6 +20,7 @@ export function Ejecuciones() {
   const [versionId, setVersionId] = useState("");
   const [delito, setDelito] = useState<Delito>("ROBO");
   const [elegida, setElegida] = useState<string | null>(null);
+  const [confirmando, setConfirmando] = useState(false);
 
   const versiones = useQuery({ queryKey: ["versiones"], queryFn: () => api.get<{ items: Version[] }>("/versiones") });
   const lista = useQuery({
@@ -39,6 +40,7 @@ export function Ejecuciones() {
     onSuccess: (r) => { setElegida(r.ejecucion_id); cache.invalidateQueries({ queryKey: ["ejecuciones"] }); },
   });
   const hayVersiones = (versiones.data?.items.length ?? 0) > 0;
+  const datosElegidos = versiones.data?.items.find((v) => v.id === (versionId || versiones.data?.items[0]?.id));
 
   return (
     <>
@@ -50,7 +52,7 @@ export function Ejecuciones() {
         {versiones.isPending ? <Cargando /> : versiones.error ? <ErrorCaja error={versiones.error} /> : !hayVersiones ? (
           <Alerta tipo="warn">No hay datos completos para usar todavía. Pídele al administrador que registre una versión de datos y la revise.</Alerta>
         ) : (
-          <form onSubmit={(e) => { e.preventDefault(); iniciar.mutate(); }}>
+          <form onSubmit={(e) => { e.preventDefault(); setConfirmando(true); }}>
             <div className="row">
               <label className="f" style={{ margin: 0, flex: 2, minWidth: 220 }}><span>Datos a usar</span>
                 <select value={versionId} onChange={(e) => setVersionId(e.target.value)} style={{ width: "100%" }}>
@@ -62,6 +64,16 @@ export function Ejecuciones() {
               </label>
               <button className="primary" type="submit" disabled={iniciar.isPending} style={{ alignSelf: "flex-end" }}>{iniciar.isPending ? "Iniciando…" : "Iniciar ejecución"}</button>
             </div>
+            {confirmando && (
+              <Alerta tipo="warn">
+                Se calcularán los resultados de <b>{delitoTitulo(delito)}</b>{datosElegidos && <> con <b>{datosElegidos.nombre_archivo}</b> (corte {mesTexto(`${datosElegidos.periodo_corte}-01`)})</>}.
+                Cuando termine, las demás personas verán estos resultados.
+                <div className="row" style={{ marginTop: 8 }}>
+                  <button className="primary" type="button" onClick={() => { setConfirmando(false); iniciar.mutate(); }}>Confirmar e iniciar</button>
+                  <button type="button" onClick={() => setConfirmando(false)}>Cancelar</button>
+                </div>
+              </Alerta>
+            )}
             <p className="note" style={{ marginTop: 10 }}>Solo aparecen los datos que ya pasaron todas las revisiones. Si falta alguno, el administrador lo resuelve en «Versiones de datos».</p>
           </form>
         )}

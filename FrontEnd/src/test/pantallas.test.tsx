@@ -119,7 +119,7 @@ describe("Inicio y Mi distrito", () => {
     const frase = await screen.findByText(/En Santiago de Surco se registraron/);
     expect(frase).toHaveTextContent("152 denuncias de robo en julio 2026");
     expect(screen.getByText("Modelo por distrito", { selector: ".t" })).toBeInTheDocument();
-    expect(screen.getByText("12 menos que lo registrado")).toBeInTheDocument();
+    expect(screen.getByText("12 denuncias menos que lo registrado")).toBeInTheDocument();
     expect(screen.getByText(/se equivocó en promedio por/)).toHaveTextContent("13,0 denuncias al mes"); // un decimal, igual que la tabla
     expect(screen.getByText(/0,64 = 64 % de ese error/)).toBeInTheDocument();
     expect(screen.getByRole("note")).toHaveTextContent(AVISO); // el aviso de alcance siempre visible
@@ -197,8 +197,8 @@ describe("meses sin denuncias registradas todavía", () => {
     const titulo = await screen.findByText(/Para agosto 2026 y setiembre 2026, los modelos estiman/);
     const tarjeta = titulo.closest(".card") as HTMLElement;
     expect(titulo).toHaveTextContent("denuncias de robo");
-    expect(tarjeta).toHaveTextContent("Modelo por distrito151Agosto 2026147Setiembre 2026");
-    expect(tarjeta).toHaveTextContent("Modelo con todo Lima149Agosto 2026145Setiembre 2026");
+    expect(tarjeta).toHaveTextContent("Modelo por distritoestimación151Agosto 2026147Setiembre 2026");
+    expect(tarjeta).toHaveTextContent("Modelo con todo Limaestimación149Agosto 2026145Setiembre 2026");
     expect(tarjeta).toHaveTextContent("Con datos hasta julio 2026");
     expect(tarjeta).toHaveTextContent("Todavía no hay denuncias registradas de esos meses");
     expect(tarjeta).toHaveTextContent("Setiembre 2026 se apoya en la estimación de agosto 2026 y puede equivocarse más");
@@ -225,8 +225,8 @@ describe("meses sin denuncias registradas todavía", () => {
     pintar("/distritos?delito=ROBO");
     await entrar();
     // una columna por mes, con nombre corto, y un selector para elegir qué forma de estimar se ve
-    expect(await screen.findByRole("columnheader", { name: /agosto 2026 \(estimado\)/ })).toBeInTheDocument();
-    expect(screen.getByRole("columnheader", { name: /setiembre 2026 \(estimado\)/ })).toBeInTheDocument();
+    expect(await screen.findByRole("columnheader", { name: /Agosto 2026 \(estimado\)/ })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: /Setiembre 2026 \(estimado\)/ })).toBeInTheDocument();
     expect(screen.queryByRole("columnheader", { name: /Estimado para/ })).not.toBeInTheDocument(); // sin encabezados largos
     expect(screen.getByRole("cell", { name: "151" })).toBeInTheDocument();      // modelo por distrito, agosto
     expect(screen.getByRole("cell", { name: "147" })).toBeInTheDocument();      // modelo por distrito, setiembre
@@ -256,11 +256,11 @@ describe("meses sin denuncias registradas todavía", () => {
     expect(lectura()).toHaveTextContent("julio 2026"); // al abrir se ve el último mes con denuncias registradas
     fireEvent.keyDown(grafico, { key: "ArrowRight" });
     expect(lectura()).toHaveTextContent("agosto 2026: todavía no hay denuncias registradas");
-    expect(lectura()).toHaveTextContent("Modelo por distrito: 151");
+    expect(lectura()).toHaveTextContent("el modelo por distrito, 151 denuncias");
     fireEvent.keyDown(grafico, { key: "End" });
     expect(lectura()).toHaveTextContent("setiembre 2026: todavía no hay denuncias registradas");
-    expect(lectura()).toHaveTextContent("Modelo por distrito: 147");
-    expect(lectura()).toHaveTextContent("Modelo con todo Lima: 145");
+    expect(lectura()).toHaveTextContent("el modelo por distrito, 147 denuncias");
+    expect(lectura()).toHaveTextContent("el modelo con todo Lima, 145 denuncias");
     for (const mes of ["agosto 2026 (estimación)", "setiembre 2026 (estimación)"]) {
       expect((screen.getByRole("cell", { name: mes }).closest("tr") as HTMLElement)).toHaveTextContent("aún sin dato");
     }
@@ -331,6 +331,8 @@ describe("Analista", () => {
     pintar("/ejecuciones");
     await entrar("analista");
     await userEvent.click(await screen.findByRole("button", { name: "Iniciar ejecución" }));
+    expect(await screen.findByText(/Cuando termine, las demás personas verán estos resultados/)).toBeInTheDocument(); // antes de iniciar se pide confirmar
+    await userEvent.click(screen.getByRole("button", { name: "Confirmar e iniciar" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Ya hay una ejecución en curso para este delito. Espera a que termine.");
   });
 });

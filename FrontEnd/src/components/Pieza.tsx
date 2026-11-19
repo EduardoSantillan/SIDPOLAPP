@@ -1,6 +1,6 @@
 import { useEffect, type ReactNode } from "react";
 import { ApiError } from "../lib/api";
-import { delitoTexto, delitoTitulo } from "../lib/formato";
+import { AVISO_BASE, delitoTexto, delitoTitulo } from "../lib/formato";
 import type { Delito } from "../lib/tipos";
 
 /** Banda con el aviso de alcance. El texto lo entrega la API, para que sea el mismo en todas partes (RF-25). */
@@ -26,17 +26,20 @@ export function ErrorCaja({ error, reintentar }: { error: unknown; reintentar?: 
 /** Cuando todavía no hay resultados se dice tal cual: nada de datos inventados. */
 export function SinResultados({ delito }: { delito: Delito }) {
   return (
-    <div className="card vacio">
-      <h2>Todavía no hay resultados de {delitoTexto(delito)}</h2>
-      <p>Aparecerán aquí cuando el equipo de análisis termine de calcularlos.</p>
-    </div>
+    <>
+      <div className="card vacio">
+        <h2>Todavía no hay resultados de {delitoTexto(delito)}</h2>
+        <p>Aparecerán aquí cuando el equipo de análisis termine de calcularlos.</p>
+      </div>
+      <Aviso texto={AVISO_BASE} />
+    </>
   );
 }
 
 /** Muestra el error; si es «sin resultados», lo explica con calma en vez de como una falla. */
 export function Falla({ error, delito, reintentar }: { error: unknown; delito: Delito; reintentar?: () => void }) {
   if (error instanceof ApiError && error.codigo === "SIN_RESULTADOS") return <SinResultados delito={delito} />;
-  return <ErrorCaja error={error} reintentar={reintentar} />;
+  return <><ErrorCaja error={error} reintentar={reintentar} /><Aviso texto={AVISO_BASE} /></>;
 }
 
 export function SelectorDelito({ valor, alCambiar }: { valor: Delito; alCambiar: (d: Delito) => void }) {
